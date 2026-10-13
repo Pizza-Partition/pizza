@@ -1,0 +1,4 @@
+.zig-cache/
+zig-out/
+*.qcow2
+__pycache__/
