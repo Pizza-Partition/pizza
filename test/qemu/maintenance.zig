@@ -1,4 +1,4 @@
-//! Phase 3 acceptance: boot the real dracut image with a disposable virtio disk.
+//! Phase 3 acceptance: boot the layered initramfs with a disposable virtio disk.
 const std = @import("std");
 const utils = @import("utils");
 const initramfs = @import("initramfs");
@@ -12,7 +12,6 @@ const params = clap.parseParamsComptime(
     \\--kernel-version <str>  Matching /lib/modules version (required).
     \\--kernel <str>  Kernel path (default: /lib/modules/VERSION/vmlinuz).
     \\--output <str>  VM output directory outside the checkout.
-    \\--drivers <str>  Drivers including at least one loadable module (default includes dummy).
     \\--timeout <u32>  VM timeout in seconds (default: 120).
 );
 
@@ -31,8 +30,6 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: *std.process.Envir
     const kernel_stat = try std.Io.Dir.cwd().statFile(io, kernel, .{});
     if (kernel_stat.kind != .file) return error.KernelMissing;
     const root = try std.Io.Dir.cwd().realPathFileAlloc(io, parsed.args.bundle orelse "zig-out/runtime/bundle", allocator);
-    const probe = try utils.elf.metadata(allocator, io, try std.fs.path.join(allocator, &.{ root, "bin/bwrap" }));
-    if (probe.interp.len == 0 or probe.needed.len == 0) return error.ProbeMustBeDynamic;
     const output = if (parsed.args.output) |path| try utils.filesystem.resolveOutputPath(allocator, io, checkout_root, path) else try utils.filesystem.createTemporaryDirectory(allocator, io, "pizza-qemu-maintenance-");
     if (utils.filesystem.pathIsWithin(checkout_root, output)) return error.VmArtifactsMustBeOutsideCheckout;
     try std.Io.Dir.cwd().createDirPath(io, output);
@@ -41,7 +38,6 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: *std.process.Envir
         .bundle = root,
         .output = image,
         .kernel_version = version,
-        .drivers = parsed.args.drivers orelse "virtio_pci virtio_blk nvme ahci ext4 dummy",
     });
     const disk = try std.fs.path.join(allocator, &.{ output, "device.raw" });
     try h.noComma(disk);

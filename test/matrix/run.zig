@@ -1,7 +1,6 @@
 const std = @import("std");
 const utils = @import("utils");
 const bundle = @import("bundle");
-const bundle_build = @import("bundle_build");
 const clap = @import("clap");
 const h = @import("vm").harness;
 
@@ -160,13 +159,12 @@ pub fn run(
         (parsed.args.bundle orelse return error.MissingBundle),
         allocator,
     );
-    const verified = try bundle_build.verify(
-        allocator,
-        io,
-        root,
-    );
+    // Compatibility tests use an explicitly unpacked producer runtime fixture.
+    // Production application packages contain an opaque base image instead.
+    const runtime = try std.json.parseFromSliceLeaky(std.json.Value, allocator, try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(allocator, &.{ root, "runtime.json" }), allocator, .limited(1024 * 1024)), .{});
+    if (runtime != .object) return error.ExpectedObject;
     const binary = (parsed.args.binary orelse "bin/pizza-abi-check");
-    const components = verified.manifest.object.get("components") orelse return error.MissingComponent;
+    const components = runtime.object.get("components") orelse return error.MissingComponent;
     if (components != .object) return error.ExpectedObject;
     const loader_relative = switch (components.object.get("dynamic-loader") orelse return error.MissingComponent) {
         .string => |value| value,

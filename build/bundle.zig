@@ -51,9 +51,9 @@ pub fn add(b: *std.Build, tool: *std.Build.Step.Compile, init_binary: *std.Build
     image.addDirectoryArg2(directory, .{});
     image.addArg("--output");
     const image_file = image.addOutputFileArg2("maint.img", .{});
-    const image_step = b.step("image", "Build initramfs using the pinned Linux 7.2.11 modules");
+    const image_step = b.step("image", "Append Pizza to the attested base initramfs");
     image_step.dependOn(&b.addInstallFileWithDir(image_file, .prefix, "share/pizza/maint.img").step);
     image_step.dependOn(&b.addInstallFileWithDir(image_file.dirname().path(b, "maint.img.pizza.json"), .prefix, "share/pizza/maint.img.pizza.json").step);
-    image_step.dependOn(&b.addInstallFileWithDir(directory.path(b, "kernel/vmlinuz"), .prefix, "share/pizza/vmlinuz").step);
+    image_step.dependOn(&b.addInstallFileWithDir(directory.path(b, "vmlinuz"), .prefix, "share/pizza/vmlinuz").step);
     return step;
 }

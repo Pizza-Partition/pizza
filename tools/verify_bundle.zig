@@ -4,10 +4,10 @@ const clap = @import("clap");
 const utils = @import("utils");
 const params = clap.parseParamsComptime(
     \\-h, --help  Display this help and exit.
-    \\--bundle <str>  Release download directory containing archive and attestation (required).
+    \\--bundle <str>  Release download directory containing base image, kernel, metadata and attestation (required).
 );
 
-/// Parses subcommand arguments, verifies the local bundle and writes its JSON audit report to stdout.
+/// Parses subcommand arguments, authenticates the downloaded base assets.
 pub fn run(
     allocator: std.mem.Allocator,
     io: std.Io,

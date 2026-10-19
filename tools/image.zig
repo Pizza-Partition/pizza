@@ -7,14 +7,11 @@ const params = clap.parseParamsComptime(
     \\--bundle <str>  Local bundle directory (required).
     \\--output <str>  Initramfs output path (required).
     \\--kernel-version <str>  Kernel release (default: the bundled 7.2.11 kernel).
-    \\--dracut-base <str>  Dracut source directory.
-    \\--drivers <str>  Space-separated kernel drivers.
-    \\--dry-run  Print the dracut command without creating the image.
-    \\--allow-development-bundle  Allow the static PID 1 development fixture.
+    \\--dry-run  Print the layer assembly command without creating the image.
 );
 
 /// Parses command-line options and delegates image creation to the initramfs module.
-/// Prints the validated dracut command for --dry-run.
+/// Prints the validated layer assembly command for --dry-run.
 pub fn run(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -40,10 +37,7 @@ pub fn run(
         .bundle = parsed.args.bundle orelse return error.MissingBundle,
         .output = parsed.args.output orelse return error.MissingOutput,
         .kernel_version = parsed.args.@"kernel-version",
-        .dracut_base = parsed.args.@"dracut-base",
-        .drivers = parsed.args.drivers,
         .dry_run = parsed.args.@"dry-run" != 0,
-        .allow_development_bundle = parsed.args.@"allow-development-bundle" != 0,
     });
     if (parsed.args.@"dry-run" != 0)
         try std.Io.File.stdout().writeStreamingAll(

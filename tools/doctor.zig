@@ -39,15 +39,12 @@ pub fn run(
         "qemu-system-x86_64",
         "qemu-img",
     } else if (std.mem.eql(u8, profile, "image")) &.{
-        "zig",
-        "dracut",
-        "systemctl",
-        "kexec",
-        "modinfo",
-        "modprobe",
-        "zstd",
-        "xz",
+        "node",
+        "gh",
+        "cpio",
         "gzip",
+        "patchelf",
+        "tar",
     } else if (std.mem.eql(u8, profile, "kiosk")) &.{
         "pkg-config",
     } else if (std.mem.eql(u8, profile, "matrix")) &.{

@@ -7,7 +7,7 @@
 第三方运行环境由独立仓库 [pizza-bundle](https://github.com/Pizza-Partition/pizza-bundle)
 通过 pacman 与 patchelf 构建，隔离测试通过后发布 GitHub Release 和 Sigstore attestation。
 本仓库通过 `config/bundle/release.json` 固定归档摘要、仓库 ID、tag 与 commit，使用
-GitHub CLI 验证发布 workflow 与来源后再解包，加入当前构建的程序和界面。
+GitHub CLI 验证发布 workflow 与来源，然后向基础 initramfs 追加当前构建的程序和界面。
 内核固定为 Linux 7.2.11（7.2.11-arch1-1），同时携带匹配模块；镜像构建不依赖宿主安装同版本内核。
 无需安装宿主 WPE；依赖包管理、ELF 重定位和运行环境审计都属于 pizza-bundle。
 
@@ -31,7 +31,7 @@ zig build -Doptimize=safe
 协议生成、bundle 校验、镜像打包和 VM 测试均使用 Zig，命令行参数使用锁定的 `zig-clap`。
 `zig build tools -- COMMAND [ARGS]` 可直接运行工具命令；安装后的入口为
 `zig-out/bin/pizza-tools`。核心工具使用 Zig；发布产物下载、attestation 验证和组装由 Node 调用 GitHub CLI、
-libarchive、patchelf 与 GNU tar 完成。
+patchelf 与 GNU tar/cpio 完成。
 
 测试入口位于 `test/main.zig`，由 `zig build test-smoke`、`test-maintenance`、
 `test-journal`、`test-matrix` 分别运行。`zig build test-runners` 安装可选宿主测试入口与
@@ -56,10 +56,10 @@ Node 下载并校验同一锁文件。开发环境应使用 `config/toolchain.js
 | `ui/execution/tui/`        | initramfs 执行 TUI：libvaxis 仪表盘与串口文本输出           |
 | `build/bundle/`            | 消费可信运行环境，加入 Pizza 程序和界面                     |
 | `core/bundle/`             | 运行环境路径与布局契约                                      |
-| `core/initramfs/`          | newc/gzip 归档、dracut 镜像生成及模块单元测试               |
+| `core/initramfs/`          | newc/gzip 归档、基础层合并及模块单元测试                    |
 | `tools/`                   | 工程命令行接口：参数解析、调用模块 API、结果输出            |
 | `core/utils/`              | 通用的文件操作、子进程和 JSON 校验                          |
-| `config/`                  | dracut 模块、容器依赖、字体配置、工具链与组件清单           |
+| `config/`                  | 发布来源锁、协议、工具链配置                                |
 | `test/`                    | QEMU/OVMF 启动、完整切换验收门、故障参数、发行版 ABI 运行器 |
 
 `zig build proto` 更新生成文件；`zig build check-proto` 检测漂移。生成文件随工程提供，正常构建只校验，不自动改写协议。序列号在 JSON/bridge 中用十进制字符串
@@ -69,7 +69,7 @@ Node 下载并校验同一锁文件。开发环境应使用 `config/toolchain.js
 `pizza-init` 检查 RAM 根、挂载 proc/sys/dev/devpts/run/tmp、加载匹配内核的驱动，
 解析非敏感 `pizza.*` 参数并持续回收子进程。初始化失败或应用退出时 PID 1 保持存活；不自动重试维护操作。
 正常启动由静态 PID 1 启动并监护 `bin/pizza-maint`。业务与 WPE 宿主同进程；网页自动通过原生 bridge 连接，事件按 journal 序号回放，不使用 HTTP/SSE 或令牌表单。
-`zig build test-maintenance -- --kernel-version VERSION` 构建并启动真实 dracut 镜像，
+`zig build test-maintenance -- --kernel-version VERSION` 构建并启动基础层加应用层的真实镜像，
 验证动态 bundle 程序、设备发现、信号处理和孤儿进程回收；需先准备包含当前 PID 1 的完整 bundle。
 `zig build bundle`（也包含在 `zig build all` 中）下载并验证固定的运行环境发布归档，加入静态
 `pizza-init`、动态 `pizza-maint` 与前端，生成 `zig-out/share/pizza/bundle.tar.gz`。

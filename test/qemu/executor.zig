@@ -34,7 +34,7 @@ pub fn run(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, chec
     for (output) |c| if (std.ascii.isWhitespace(c) or c == '"' or c == '\\' or c == ';') return error.DebugfsPathUnsupported;
     try std.Io.Dir.cwd().createDirPath(io, output);
     const base = try std.fs.path.join(a, &.{ output, "bundle.cpio.gz" });
-    _ = try initramfs.build(a, io, env, checkout, .{ .bundle = parsed.args.bundle orelse "zig-out/runtime/bundle", .output = base, .kernel_version = version, .drivers = "virtio_pci virtio_blk ext4" });
+    _ = try initramfs.build(a, io, env, checkout, .{ .bundle = parsed.args.bundle orelse "zig-out/runtime/bundle", .output = base, .kernel_version = version });
     const overlay = try std.fs.path.join(a, &.{ output, "fixture.cpio.gz" });
     try initramfs.staticInit(a, io, fixture, overlay);
     const image = try std.fs.path.join(a, &.{ output, "executor.cpio.gz" });

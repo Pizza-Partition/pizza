@@ -61,7 +61,7 @@ pub fn run(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, chec
     try std.Io.Dir.cwd().createDirPath(io, output);
     const kernel = try a.print("/lib/modules/{s}/vmlinuz", .{version});
     const maintenance = parsed.args.@"maintenance-image" orelse try a.print("{s}/maintenance.img", .{output});
-    if (parsed.args.@"maintenance-image" == null) _ = try initramfs.build(a, io, env, checkout, .{ .bundle = bundle, .output = maintenance, .kernel_version = version, .drivers = "virtio_pci virtio_blk ext4" });
+    if (parsed.args.@"maintenance-image" == null) _ = try initramfs.build(a, io, env, checkout, .{ .bundle = bundle, .output = maintenance, .kernel_version = version });
     var files: Files = .{ .a = a, .io = io, .names = .init(a) };
     try files.copy(fixture, "init", true);
     try files.copy(fixture, "fixture", true);

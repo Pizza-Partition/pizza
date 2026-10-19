@@ -3,11 +3,13 @@
 选定 x86-64 UEFI、systemd-boot 与 UKI，不以传统 BIOS 为目标。
 systemd-boot 仅为固件阶段的启动菜单；运行时 PID 1 仍为静态 pizza-init。
 
-两个仓库保持单向依赖。pizza-bundle 发布 portable 用户态，以及固定 Linux 7.2.11
-（官方 Arch 包 release 7.2.11-arch1-1）和匹配模块。pizza 验证来源，加入应用与界面，
+两个仓库保持单向依赖。pizza-bundle 用 dracut 将 portable 用户态和匹配模块预装到基础 initramfs，
+同时发布固定 Linux 7.2.11（官方 Arch 包 release 7.2.11-arch1-1）。pizza 验证三份产物来源，追加 /init、应用与界面的 newc 层，
 通过 `zig build image` 生成 `vmlinuz`、`maint.img` 和镜像 metadata。
 生产镜像直接消费随包模块，不要求宿主安装同版本内核。
 固件取决于目标硬件；当前内核包不包含 GPU/无线等固件。
+
+必须先完成应用层插入，再组装和签名 UKI；插入程序会改变镜像摘要，不能直接修改已经签名的 UKI。
 
 后续 UKI 将通过 systemd ukify 封装内核、initramfs、OS 标识和启动命令行。
 ISO 的 EFI System Partition 使用 FAT 格式，建议布局：

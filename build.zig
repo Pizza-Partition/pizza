@@ -563,7 +563,7 @@ pub fn build(b: *std.Build) void {
     }
     for ([_][3][]const u8{
         .{ "test-smoke", "smoke", "Boot the static PID 1 in QEMU" },
-        .{ "test-maintenance", "maintenance", "Boot a full dracut maintenance image in QEMU" },
+        .{ "test-maintenance", "maintenance", "Boot the layered maintenance image in QEMU" },
         .{
             "test-transition",
             "transition",

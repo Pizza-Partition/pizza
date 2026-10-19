@@ -34,7 +34,7 @@ loader checks and actual WPE smoke tests belong to pizza-bundle's publishing CI.
 
 - `zig build test`: protocol drift, Zig compilation/refusal boundaries, schema/bridge unit tests, bundle verification tests.
 - `zig build test-smoke`: real static Zig PID1, real host kernel, OVMF, QEMU/TCG. Checks RAM-root and basic mounts, then powers off with explicit `pizza.boot=smoke`. Requires no root or KVM.
-- `zig build test-maintenance -- --kernel-version VERSION`: builds the real dracut image from a prepared full bundle, attaches a fresh read-only virtio disk, and boots with `pizza.boot=selftest`. Requires RAM-root, mounts, matching kernel modules, a block device, successful execution of dynamic `bin/bwrap --version`, direct-child and orphan reaping, TERM/INT handling, the ordinary application exiting with code 17 while PID 1 stays alive, at least three seconds of supervisor lifetime, and clean poweroff. It rejects kernel panics and degraded startup.
+- `zig build test-maintenance -- --kernel-version VERSION`: builds the layered image from a prepared base-plus-application package, attaches a fresh read-only virtio disk, and boots with `pizza.boot=selftest`. Requires RAM-root, mounts, matching kernel modules, a block device, successful execution of dynamic `bin/bwrap --version`, direct-child and orphan reaping, TERM/INT handling, the ordinary application exiting with code 17 while PID 1 stays alive, at least three seconds of supervisor lifetime, and clean poweroff. It rejects kernel panics and degraded startup.
 - `zig build test-journal`: creates a private ext4 disk, runs two independent QEMU boots, and extracts the persisted journal with debugfs for host-side verification. Checks actual boot IDs, continued sequence numbers, and `succeeded` / `failed` / `in_flight` reconciliation. Requires `mkfs.ext4`, `debugfs`, OVMF and a kernel with built-in virtio/ext4; the build supplies its static fixture PID 1. This is a clean-reboot persistence test.
 - `zig build test-transition`: strict phase-7 acceptance gate. Requires an instrumented guest fixture; currently exits with an actionable error instead of a false pass.
 - `zig build test-matrix -- --config /path/targets.json --bundle /path/bundle`: boots pinned cloud fixtures, mounts only the bundle read-only, and runs its local `bin/pizza-abi-check` in an otherwise empty tmpfs root. Images and the phase-2 ABI-check binary must be supplied.
@@ -48,7 +48,7 @@ fixtures use overlays/snapshot mode.
 `zig build test-bridge` runs the actual local panel with an installed WPE runtime
 in headless mode. It needs a host that permits WebKit subprocess IPC and sandbox
 setup. `zig build test-maintenance -- --bridge --bundle /path/bundle
---kernel-version VERSION` performs the same test inside the real dracut RAM-root
+--kernel-version VERSION` performs the same test inside the real layered RAM-root
 image with the bundled WPE libraries and helper processes. The dedicated VM test
 disables the WebKit sandbox explicitly; production startup does not. It verifies
 all six native methods, the real DOM, and 134 journal records delivered in batches
@@ -139,7 +139,7 @@ product journal home or resolve the original-root read-only constraint. Its
 ## Simulated executor
 
 `zig build test-executor -- --bundle /path/current-bundle --kernel-version VERSION`
-builds the full dracut image, then appends a static VM-only PID 1. Only the fresh
+builds the full layered image, then appends a static VM-only PID 1. Only the fresh
 private `/dev/vda` ext4 disk is mounted; the fixture launches the actual dynamic
 `pizza-maint` from the bundle. The success and fsync cases use real headless WPE, observe execution while running,
 and verify the final DOM state is succeeded at 20/20 or degraded at 7/20. Console
@@ -180,3 +180,5 @@ The deliberately rejecting systemctl fixture is used only for the rollback case;
 the successful switch uses the real systemd manager and systemctl. This focused
 suite does not replace the broader `test-transition` acceptance gate, graphics,
 Secure Boot, distro matrix or physical-hardware validation.
+
+The distro compatibility matrix takes an explicitly unpacked `pizza-bundle` raw runtime fixture (`runtime.json`), not the production opaque base-plus-overlay package.
