@@ -5,6 +5,7 @@ const utils = @import("utils");
 
 const params = clap.parseParamsComptime(
     \\-h, --help  Display this help and exit.
+    \\--patchelf <str>  patchelf 0.19.2 executable (default: PATH).
     \\--runtime <str>  Verified release download directory (required).
     \\--init <str>  Static pizza-init PID 1 binary (required).
     \\--maintenance <str>  Maintenance application binary (required).
@@ -44,5 +45,5 @@ pub fn run(
     const maintenance = parsed.args.maintenance orelse return error.MissingMaintenanceBinary;
     const panel = parsed.args.panel orelse return error.MissingPanelAssets;
     const destination = parsed.args.destination orelse return error.MissingDestination;
-    try utils.process.runInherited(io, environ, &.{ "node", "tools/runtime.mjs", "assemble", "--runtime", runtime, "--init", init_binary, "--maintenance", maintenance, "--panel", panel, "--destination", destination });
+    try utils.process.runInherited(io, environ, &.{ "node", "tools/runtime.mjs", "assemble", "--runtime", runtime, "--init", init_binary, "--maintenance", maintenance, "--panel", panel, "--destination", destination, "--patchelf", parsed.args.patchelf orelse "patchelf" });
 }

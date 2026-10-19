@@ -11,7 +11,7 @@ env:
   ZIG: zig
 jobs:
   release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -21,7 +21,7 @@ jobs:
       - name: Install pinned toolchain and packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format libarchive-tools patchelf cpio zstd qemu-system-x86
+          sudo apt-get install -y clang-format libarchive-tools cpio zstd qemu-system-x86
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           import { createHash } from 'node:crypto';
@@ -51,9 +51,14 @@ jobs:
           tar -C zig-out/bin -czf dist/pizza-tools-x86_64.tar.gz pizza pizza-tools pizza-init
           cd dist
           sha256sum *.tar.gz vmlinuz maint.img maint.img.pizza.json > SHA256SUMS
+      - name: Check the application interpreter and search path
+        run: |
+          readelf -lW zig-out/runtime/bundle/overlay/opt/pizza/bundle/bin/pizza-maint | grep -F 'Requesting program interpreter: lib/ld-linux-x86-64.so.2'
+          readelf -dW zig-out/runtime/bundle/overlay/opt/pizza/bundle/bin/pizza-maint | grep -F '$ORIGIN/../lib'
+          /lib64/ld-linux-x86-64.so.2 zig-out/runtime/bundle/overlay/opt/pizza/bundle/bin/pizza-maint --help > /dev/null
       - name: Boot the actual maintenance image and native WPE bridge
         run: |
-          timeout 600 qemu-system-x86_64 -machine q35 -accel tcg -cpu max -m 4096M -display none -serial stdio -monitor none -nic none -kernel dist/vmlinuz -initrd dist/maint.img -append 'console=ttyS0 loglevel=4 panic=1 rdinit=/init pizza.boot=bridge_test' -no-reboot > /tmp/pizza-release-boot.log 2>&1 || { cat /tmp/pizza-release-boot.log; exit 1; }
+          timeout 180 qemu-system-x86_64 -machine q35 -accel tcg -cpu max -m 4096M -display none -serial stdio -monitor none -nic none -kernel dist/vmlinuz -initrd dist/maint.img -append 'console=ttyS0 loglevel=4 panic=1 rdinit=/init pizza.boot=bridge_test' -no-reboot > /tmp/pizza-release-boot.log 2>&1 || { cat /tmp/pizza-release-boot.log; exit 1; }
           cat /tmp/pizza-release-boot.log
           grep -F 'PIZZA_BRIDGE_SELFTEST_READY' /tmp/pizza-release-boot.log
           grep -F 'PIZZA_INIT_BRIDGE_CHILD_READY' /tmp/pizza-release-boot.log

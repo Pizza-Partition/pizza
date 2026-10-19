@@ -135,6 +135,13 @@ function verifyAll(directory, lock) {
 }
 function assemble(options) {
   const lock = readLock(options.lock);
+  const patchTool = options.patchelf || 'patchelf';
+  const patchVersion = run(patchTool, ['--version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit'],
+  }).trim();
+  if (patchVersion !== 'patchelf 0.19.2')
+    throw new Error('Use pinned patchelf 0.19.2: older versions corrupt Zig ELF output');
   const assets = verifyAll(options.runtime, lock);
   newDirectory(options.destination, (root) => {
     for (const name of [lock.asset, lock.kernel_asset, lock.metadata_asset, 'attestation.json'])
@@ -148,7 +155,7 @@ function assemble(options) {
     fs.copyFileSync(options.maintenance, application);
     fs.chmodSync(application, 0o755);
     // Patch only Pizza's new executable; the authenticated base stays byte-for-byte intact.
-    run('patchelf', [
+    run(patchTool, [
       '--set-interpreter',
       'lib/ld-linux-x86-64.so.2',
       '--set-rpath',

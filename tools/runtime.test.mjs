@@ -236,3 +236,17 @@ printf '%s' '[{"verificationResult":{"signature":{"certificate":{"sourceReposito
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('rejects old patchelf before authenticating or modifying application inputs', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pizza-old-patchelf-'));
+  try {
+    const executable = path.join(directory, 'patchelf');
+    fs.writeFileSync(executable, "#!/bin/sh\nprintf 'patchelf 0.18.0\\n'\n", { mode: 0o755 });
+    assert.throws(
+      () => main(['assemble', '--runtime', '/unused', '--patchelf', executable]),
+      /Use pinned patchelf 0.19.2/,
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -10,10 +10,17 @@ pub fn add(b: *std.Build, tool: *std.Build.Step.Compile, init_binary: *std.Build
     const runtime = fetch.addOutputDirectoryArg2("runtime", .{});
     const runtime_step = b.step("runtime-deps", "Download and verify the pinned pizza-bundle release");
     runtime_step.dependOn(&fetch.step);
+    const bootstrap = b.addSystemCommand(&.{ "node", "tools/bootstrap-patchelf.mjs" });
+    bootstrap.setCwd(b.path("."));
+    bootstrap.addFileInput(b.path("tools/bootstrap-patchelf.mjs"));
+    bootstrap.addFileInput(b.path("config/patchelf.json"));
+    const patch_tool = bootstrap.addOutputDirectoryArg2("patchelf", .{});
     const prepare = b.addRunArtifact(tool);
     prepare.setCwd(b.path("."));
     prepare.addArgs(&.{ "prepare-bundle", "--runtime" });
     prepare.addDirectoryArg2(runtime, .{});
+    prepare.addArg("--patchelf");
+    prepare.addFileArg(patch_tool.path(b, "bin/patchelf"));
     prepare.addArg("--init");
     prepare.addArtifactArg(init_binary);
     prepare.addArg("--maintenance");

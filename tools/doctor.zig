@@ -43,7 +43,6 @@ pub fn run(
         "gh",
         "cpio",
         "gzip",
-        "patchelf",
         "tar",
     } else if (std.mem.eql(u8, profile, "kiosk")) &.{
         "pkg-config",

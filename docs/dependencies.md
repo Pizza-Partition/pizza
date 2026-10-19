@@ -14,7 +14,7 @@ pacman 负责签名验证、递归依赖解析与安装，patchelf 负责解释�
 ## 消费固定发布版本
 
 宿主需要锁定的 Zig、Node >=22、npm、GitHub CLI（支持 `gh attestation verify`）、
-GNU cpio/gzip、patchelf 和 GNU tar（测试另需 libarchive 的 bsdtar）。前端格式检查另需 clang-format。
+GNU cpio/gzip 和 GNU tar（测试另需 libarchive 的 bsdtar）。前端格式检查另需 clang-format。构建自动下载官方 patchelf 0.19.2 二进制并验证 `config/patchelf.json` 中的 SHA-256；已复现 Ubuntu 24.04 自带 0.18 会破坏当前 Zig ELF 布局，禁止用于应用组装。
 
 ```sh
 zig build deps
@@ -32,9 +32,10 @@ zig build all test
 
 ```sh
 node tools/runtime.mjs fetch --destination /tmp/pizza-runtime
+node tools/bootstrap-patchelf.mjs /tmp/pizza-patchelf
 zig build tools -- verify-bundle --bundle /tmp/pizza-runtime
 zig build tools -- prepare-bundle \
-  --runtime /tmp/pizza-runtime \
+  --runtime /tmp/pizza-runtime --patchelf /tmp/pizza-patchelf/bin/patchelf \
   --init zig-out/bin/pizza-init --maintenance zig-out/bin/pizza-maint \
   --panel ui/execution/gui/dist --destination /tmp/pizza-application
 zig build tools -- pack-bundle --bundle /tmp/pizza-application --output /tmp/pizza-application.tar.gz
