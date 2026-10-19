@@ -6,7 +6,7 @@ const params = clap.parseParamsComptime(
     \\-h, --help  Display this help and exit.
     \\--bundle <str>  Local bundle directory (required).
     \\--output <str>  Initramfs output path (required).
-    \\--kernel-version <str>  Kernel version (default: running kernel).
+    \\--kernel-version <str>  Kernel release (default: the bundled 7.2.11 kernel).
     \\--dracut-base <str>  Dracut source directory.
     \\--drivers <str>  Space-separated kernel drivers.
     \\--dry-run  Print the dracut command without creating the image.

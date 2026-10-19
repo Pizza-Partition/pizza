@@ -8,12 +8,14 @@
 通过 pacman 与 patchelf 构建，隔离测试通过后发布 GitHub Release 和 Sigstore attestation。
 本仓库通过 `config/bundle/release.json` 固定归档摘要、仓库 ID、tag 与 commit，使用
 GitHub CLI 验证发布 workflow 与来源后再解包，加入当前构建的程序和界面。
+内核固定为 Linux 7.2.11（7.2.11-arch1-1），同时携带匹配模块；镜像构建不依赖宿主安装同版本内核。
 无需安装宿主 WPE；依赖包管理、ELF 重定位和运行环境审计都属于 pizza-bundle。
 
 ```bash
 zig build deps
 zig build runtime-deps
 zig build bundle -Doptimize=safe
+zig build image -Doptimize=safe
 zig build fmt
 zig build fmt-check
 zig build doctor
@@ -109,3 +111,5 @@ Prettier；C 使用系统 clang-format。配置为 `.prettierrc.json`、`.clang-
 
 运行日志统一使用 `std.log`；帮助文本和供脚本读取的 JSON 结果输出到 stdout。
 公共函数显式接收 allocator、I/O 等所需参数，没有通用 Context 或自制参数解析器。
+
+独立启动镜像选用 systemd-boot + UKI，目标为 x86-64 UEFI；阶段与布局见 [boot-image.md](docs/boot-image.md)。

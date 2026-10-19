@@ -9,12 +9,10 @@
 先用当前构建的 `pizza-init`、`pizza-maint` 和执行 GUI 生成完整 bundle，随后生成维护镜像：
 
 ```sh
-zig build all
-zig build tools -- image --bundle zig-out/runtime/bundle \
-  --kernel-version VERSION --output /tmp/pizza-maint.img
+zig build all image
 ```
 
-镜像工具同时写出 `/tmp/pizza-maint.img.pizza.json`，记录镜像 SHA-256 和模块的 kernel release。
+镜像工具同时写出 `zig-out/share/pizza/maint.img.pizza.json`，记录镜像 SHA-256 和模块的 kernel release。
 暂存时会核对镜像哈希、bzImage 中的 release 与模块版本，再把副本放入私有 tmpfs。
 不要把其他内核的 image 和 modules 混用，也不要手工补写 metadata 绕过检查。
 
@@ -35,8 +33,8 @@ sudo install -d -m 0700 /mnt/pizza-journal/session-001
 
 ```sh
 sudo zig-out/bin/pizza transition build \
-  --kernel /lib/modules/VERSION/vmlinuz \
-  --initrd /tmp/pizza-maint.img --plan /path/plan.json \
+  --kernel zig-out/share/pizza/vmlinuz \
+  --initrd zig-out/share/pizza/maint.img --plan /path/plan.json \
   --journal-device /dev/disk/by-uuid/JOURNAL_UUID \
   --journal-home /mnt/pizza-journal/session-001
 ```

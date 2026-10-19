@@ -45,5 +45,15 @@ pub fn add(b: *std.Build, tool: *std.Build.Step.Compile, init_binary: *std.Build
     parent.step.dependOn(&remove.step);
     copy.step.dependOn(&parent.step);
     step.dependOn(&copy.step);
+    const image = b.addRunArtifact(tool);
+    image.setCwd(b.path("."));
+    image.addArgs(&.{ "image", "--bundle" });
+    image.addDirectoryArg2(directory, .{});
+    image.addArg("--output");
+    const image_file = image.addOutputFileArg2("maint.img", .{});
+    const image_step = b.step("image", "Build initramfs using the pinned Linux 7.2.11 modules");
+    image_step.dependOn(&b.addInstallFileWithDir(image_file, .prefix, "share/pizza/maint.img").step);
+    image_step.dependOn(&b.addInstallFileWithDir(image_file.dirname().path(b, "maint.img.pizza.json"), .prefix, "share/pizza/maint.img.pizza.json").step);
+    image_step.dependOn(&b.addInstallFileWithDir(directory.path(b, "kernel/vmlinuz"), .prefix, "share/pizza/vmlinuz").step);
     return step;
 }

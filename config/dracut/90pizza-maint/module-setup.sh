@@ -16,10 +16,11 @@ installkernel() {
     # Resolve soft and hard dependencies with host kmod at build time. No host
     # modprobe or its shared libraries are needed in the maintenance image.
     for driver in "${drivers[@]}"; do
-        dependencies=$(modprobe --config /dev/null --ignore-install --set-version "$kernel" --show-depends -- "$driver") || return 1
+        dependencies=$(modprobe --dirname "${PIZZA_MODULES_ROOT:-/}" --config /dev/null --ignore-install --set-version "$kernel" --show-depends -- "$driver") || return 1
         while read -r action source unused; do
             [[ $action == insmod ]] || continue # built-ins need no loading
             case "$source" in
+                "${PIZZA_MODULES_ROOT:-/}"/lib/modules/"$kernel"/*) relative=${source#"${PIZZA_MODULES_ROOT:-/}"/lib/modules/} ;;
                 /lib/modules/"$kernel"/*) relative=${source#/lib/modules/} ;;
                 /usr/lib/modules/"$kernel"/*) relative=${source#/usr/lib/modules/} ;;
                 *) derror "Unexpected module path: $source"; return 1 ;;

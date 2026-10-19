@@ -51,18 +51,28 @@ pub fn build(
     std.Io.Dir.cwd().access(io, maint, .{ .execute = true }) catch {
         return error.MissingExecutablePid1OrPanel;
     };
-    const meta = try utils.elf.metadata(allocator, io, maint);
-    if (meta.interp.len != 0 or meta.needed.len != 0)
+    const pid1_meta = try utils.elf.metadata(allocator, io, maint);
+    if (pid1_meta.interp.len != 0 or pid1_meta.needed.len != 0)
         return error.Pid1MustBeStatic;
-    const kernel = options.kernel_version orelse std.mem.trim(
-        u8,
-        try utils.process.checkedOutput(allocator, io, environ, &.{ "uname", "-r" }),
-        " \t\r\n",
-    );
-    std.Io.Dir.cwd().access(io, try std.fs.path.join(
-        allocator,
-        &.{ "/lib/modules", kernel },
-    ), .{}) catch return error.MatchingKernelModulesMissing;
+    var modules_root: ?[]const u8 = null;
+    const kernel = if (options.allow_development_bundle)
+        options.kernel_version orelse std.mem.trim(u8, try utils.process.checkedOutput(allocator, io, environ, &.{ "uname", "-r" }), " \t\r\n")
+    else blk: {
+        const meta = (try bundle_build.verify(allocator, io, root)).manifest;
+        const pinned = meta.object.get("kernel") orelse return error.MissingKernelInventory;
+        if (pinned != .object) return error.ExpectedObject;
+        const value = pinned.object.get("release") orelse return error.MissingField;
+        if (value != .string or !std.mem.eql(u8, value.string, "7.2.11-arch1-1")) return error.KernelModulesVersionMismatch;
+        if (options.kernel_version) |selected| if (!std.mem.eql(u8, selected, value.string)) return error.KernelModulesVersionMismatch;
+        modules_root = try std.fs.path.join(allocator, &.{ root, "kernel" });
+        _ = try bundle.rooted(allocator, io, root, "kernel/vmlinuz");
+        break :blk value.string;
+    };
+    const modules_path = if (modules_root) |base_root|
+        try std.fs.path.join(allocator, &.{ base_root, "lib/modules", kernel })
+    else
+        try std.fs.path.join(allocator, &.{ "/lib/modules", kernel });
+    std.Io.Dir.cwd().access(io, modules_path, .{}) catch return error.MatchingKernelModulesMissing;
     const original = (options.dracut_base orelse "/usr/lib/dracut");
     _ = try utils.process.findExecutable(allocator, io, environ, "dracut");
     std.Io.Dir.cwd().access(io, original, .{}) catch return error.DracutMissing;
@@ -86,41 +96,26 @@ pub fn build(
     );
     const conf = try std.fs.path.join(allocator, &.{ temporary, "conf" });
     try std.Io.Dir.cwd().createDirPath(io, conf);
-    const command = try allocator.dupe([]const u8, &.{
-        "dracut",
-        "--tmpdir",
-        temporary,
-        "--conf",
-        "/dev/null",
-        "--confdir",
-        conf,
-        "--modules",
-        "pizza-maint",
-        "--no-hostonly",
-        "--no-hostonly-cmdline",
-        "--no-early-microcode",
-        // Include the verified runtime after dracut's host dependency
-        // resolution. Re-resolving the runtime interpreter would import host paths.
-        "--include",
-        root,
-        "/opt/pizza/bundle",
-        "--include",
-        panel,
-        "/opt/pizza/panel",
-        // Preserve the published runtime and kernel module signatures.
-        "--nostrip",
-        "--gzip",
-        "--kver",
-        kernel,
-        "--force",
-        output,
-    });
+    var command_list: std.array_list.Managed([]const u8) = .init(allocator);
+    try command_list.appendSlice(&.{ "dracut", "--tmpdir", temporary, "--conf", "/dev/null", "--confdir", conf, "--modules", "pizza-maint", "--no-hostonly", "--no-hostonly-cmdline", "--no-early-microcode", "--nostrip", "--gzip", "--kver", kernel });
+    if (modules_root != null) try command_list.appendSlice(&.{ "--kmoddir", modules_path });
+    // Include only userspace here; selected kernel modules are installed separately by dracut.
+    for ([_][]const u8{ "bin", "lib", "share" }) |part| {
+        std.Io.Dir.cwd().access(io, try std.fs.path.join(allocator, &.{ root, part }), .{}) catch |err| {
+            if (options.allow_development_bundle and err == error.FileNotFound) continue;
+            return err;
+        };
+        try command_list.appendSlice(&.{ "--include", try std.fs.path.join(allocator, &.{ root, part }), try std.fs.path.join(allocator, &.{ bundle.prefix, part }) });
+    }
+    try command_list.appendSlice(&.{ "--include", panel, "/opt/pizza/panel", "--force", output });
+    const command = try command_list.toOwnedSlice();
     if (options.dry_run) return command;
     var environment = try environ.clone(allocator);
     try environment.put("dracutbasedir", base);
     try environment.put("PIZZA_BUNDLE_ROOT", root);
     try environment.put("PIZZA_MAINT_BINARY", maint);
     try environment.put("PIZZA_PANEL_ROOT", panel);
+    if (modules_root) |module_base| try environment.put("PIZZA_MODULES_ROOT", module_base);
     try environment.put(
         "PIZZA_DRIVERS",
         options.drivers orelse "virtio_pci virtio_blk nvme ahci ext4",

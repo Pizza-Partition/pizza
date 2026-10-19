@@ -21,7 +21,7 @@ jobs:
       - name: Install pinned toolchain and packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format libarchive-tools patchelf
+          sudo apt-get install -y clang-format libarchive-tools patchelf dracut-core kmod cpio zstd qemu-system-x86
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           import { createHash } from 'node:crypto';
@@ -43,16 +43,28 @@ jobs:
           zig build deps
           zig build fmt-check
           zig build all test -Doptimize=safe
+          zig build image -Doptimize=safe
           mkdir -p dist
           cp zig-out/share/pizza/bundle.tar.gz dist/pizza-application-x86_64.tar.gz
+          cp zig-out/share/pizza/vmlinuz zig-out/share/pizza/maint.img zig-out/share/pizza/maint.img.pizza.json dist/
           tar -C zig-out/bin -czf dist/pizza-tools-x86_64.tar.gz pizza pizza-tools pizza-init
           cd dist
-          sha256sum *.tar.gz > SHA256SUMS
+          sha256sum *.tar.gz vmlinuz maint.img maint.img.pizza.json > SHA256SUMS
+      - name: Boot the actual maintenance image and native WPE bridge
+        run: |
+          timeout 180 qemu-system-x86_64 -machine q35 -accel tcg -cpu max -m 4096M -display none -serial stdio -monitor none -nic none -kernel dist/vmlinuz -initrd dist/maint.img -append 'console=ttyS0 loglevel=4 panic=1 rdinit=/init pizza.boot=bridge_test' -no-reboot > /tmp/pizza-release-boot.log 2>&1
+          cat /tmp/pizza-release-boot.log
+          grep -F 'PIZZA_BRIDGE_SELFTEST_READY' /tmp/pizza-release-boot.log
+          grep -F 'PIZZA_INIT_BRIDGE_CHILD_READY' /tmp/pizza-release-boot.log
       - name: Attest application and tools
         id: attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: dist/*.tar.gz
+          subject-path: |
+            dist/*.tar.gz
+            dist/vmlinuz
+            dist/maint.img
+            dist/maint.img.pizza.json
       - name: Publish Pizza preview release
         env:
           RELEASE_TAG: ${{ github.ref_name }}

@@ -56,14 +56,17 @@ Pizza 只为自己刚构建的 `pizza-maint` 设置解释器与 RUNPATH。
 整体移动 bundle 不需要重写 ELF。WPE 上游写死的 libexec/resource 路径由 RAM 镜像中的别名适配，
 资源环境变量按实际 bundle 根设置；这些别名不属于 bundle 的固定安装前缀。
 
-运行库版本、来源包清单和许可证随包发布。升级时先在 pizza-bundle 发布测试通过的新版本，
+运行库版本、来源包清单和许可证随包发布。运行环境与内核归档各自固定摘要并验证同一发布来源。升级时先在 pizza-bundle 发布测试通过的新版本，
 再更新本仓库的 release.json。两仓库不存在反向依赖。
 旧 format 1/2 原生归档部署接口、collect/prepare/audit 实现和包锁定树已移除。
 
 ## 内核与维护镜像
 
-内核及匹配模块来自目标宿主，由 dracut 加入维护镜像。签名证明运行环境的来源与完整性，
+Linux 7.2.11 与匹配的 7.2.11-arch1-1 模块来自同一已验证发布，独立于宿主内核。
+`zig build image` 使用随包模块生成 initramfs，并输出对应内核。签名证明运行环境的来源与完整性，
 不证明它可以运行于任意内核、CPU 或显卡。生产交接见 [transition.md](transition.md)。
 开发 smoke 镜像仅包含静态 PID 1，须显式指定 `--allow-development-bundle`；它不代表运行环境发布验收。
 
 旧设计文档中关于本地软件包收集、逐文件清单和手工发行签名的描述已由本设计取代。
+
+未来可启动 ISO 采用 systemd-boot + UKI（x86-64 UEFI），见 [boot-image.md](boot-image.md)。

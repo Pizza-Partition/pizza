@@ -16,7 +16,9 @@ export function readLock(file) {
     !/^[a-f0-9]{40}$/.test(lock.commit) ||
     !/^[a-f0-9]{64}$/.test(lock.sha256) ||
     !/^\d+$/.test(String(lock.repository_id)) ||
-    lock.asset !== 'pizza-runtime-x86_64.tar.gz'
+    lock.asset !== 'pizza-runtime-x86_64.tar.gz' ||
+    lock.kernel_asset !== 'pizza-kernel-x86_64.tar.gz' ||
+    !/^[a-f0-9]{64}$/.test(lock.kernel_sha256)
   )
     throw new Error('Invalid runtime release lock');
   return lock;
@@ -45,8 +47,8 @@ export function verificationArgs(archive, attestation, lock) {
 }
 const run = (command, args, options = {}) =>
   execFileSync(command, args, { stdio: 'inherit', ...options });
-function verify(directory, lock) {
-  const archive = path.join(directory, lock.asset);
+function verify(directory, lock, asset = lock.asset, expected = lock.sha256) {
+  const archive = path.join(directory, asset);
   const digest = createHash('sha256');
   const fd = fs.openSync(archive, 'r');
   try {
@@ -56,7 +58,7 @@ function verify(directory, lock) {
   } finally {
     fs.closeSync(fd);
   }
-  if (digest.digest('hex') !== lock.sha256) throw new Error('Runtime archive SHA-256 mismatch');
+  if (digest.digest('hex') !== expected) throw new Error('Runtime archive SHA-256 mismatch');
   const result = JSON.parse(
     run('gh', verificationArgs(archive, path.join(directory, 'attestation.json'), lock), {
       stdio: ['ignore', 'pipe', 'inherit'],
@@ -104,20 +106,44 @@ export function checkDescriptor(meta, kind) {
     throw new Error('Incompatible runtime descriptor');
   return meta;
 }
+export function checkKernelDescriptor(meta) {
+  if (
+    meta.format !== 1 ||
+    meta.version !== '7.2.11' ||
+    meta.release !== '7.2.11-arch1-1' ||
+    meta.image !== 'vmlinuz' ||
+    meta.modules !== `lib/modules/${meta.release}`
+  )
+    throw new Error('Incompatible kernel descriptor');
+  return meta;
+}
+function verifyAll(directory, lock) {
+  return {
+    runtime: verify(directory, lock),
+    kernel: verify(directory, lock, lock.kernel_asset, lock.kernel_sha256),
+  };
+}
+function extract(archive, destination) {
+  fs.mkdirSync(destination, { recursive: true });
+  run('bsdtar', [
+    '-xzf',
+    archive,
+    '-C',
+    destination,
+    '--no-same-owner',
+    '--no-same-permissions',
+    '--safe-writes',
+  ]);
+}
 function assemble(options) {
   const lock = readLock(options.lock);
-  const archive = verify(options.runtime, lock);
+  const archives = verifyAll(options.runtime, lock);
   newDirectory(options.destination, (root) => {
-    // libarchive refuses traversal and symlink extraction outside this fresh directory.
-    run('bsdtar', [
-      '-xzf',
-      archive,
-      '-C',
-      root,
-      '--no-same-owner',
-      '--no-same-permissions',
-      '--safe-writes',
-    ]);
+    extract(archives.runtime, root);
+    extract(archives.kernel, path.join(root, 'kernel'));
+    const kernel = checkKernelDescriptor(
+      JSON.parse(fs.readFileSync(path.join(root, 'kernel/kernel.json'), 'utf8')),
+    );
     const metadata = checkDescriptor(
       JSON.parse(fs.readFileSync(path.join(root, 'runtime.json'), 'utf8')),
       'pizza-runtime',
@@ -148,6 +174,12 @@ function assemble(options) {
         {
           ...metadata,
           kind: 'pizza-application',
+          kernel: {
+            ...kernel,
+            root: 'kernel',
+            image: 'kernel/vmlinuz',
+            modules: `kernel/${kernel.modules}`,
+          },
           components: {
             ...metadata.components,
             'pizza-init': 'bin/pizza-init',
@@ -181,14 +213,16 @@ export function main(argv) {
         '--pattern',
         lock.asset,
         '--pattern',
+        lock.kernel_asset,
+        '--pattern',
         'attestation.json',
         '--dir',
         directory,
       ]);
-      verify(directory, lock);
+      verifyAll(directory, lock);
     });
   } else if (command === 'verify') {
-    verify(options.runtime, readLock(options.lock));
+    verifyAll(options.runtime, readLock(options.lock));
   } else if (command === 'assemble') {
     assemble(options);
   } else if (command === 'pack') {

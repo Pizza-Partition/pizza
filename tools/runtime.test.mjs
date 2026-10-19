@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkDescriptor, readLock, verificationArgs, main } from './runtime.mjs';
+import {
+  checkDescriptor,
+  checkKernelDescriptor,
+  readLock,
+  verificationArgs,
+  main,
+} from './runtime.mjs';
 
 test('attestation policy binds repository, release ref, source commit and workflow', () => {
   const lock = { tag: 'v0.1.0', commit: 'a'.repeat(40) };
@@ -48,6 +54,8 @@ test('rejects a modified archive before starting gh verification or extraction',
       sha256: 'b'.repeat(64),
       repository_id: '123',
       asset: 'pizza-runtime-x86_64.tar.gz',
+      kernel_asset: 'pizza-kernel-x86_64.tar.gz',
+      kernel_sha256: 'c'.repeat(64),
     };
     const file = path.join(directory, 'lock.json');
     fs.writeFileSync(file, JSON.stringify(lock));
@@ -61,4 +69,17 @@ test('rejects a modified archive before starting gh verification or extraction',
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('kernel and module release must be the pinned 7.2.11 pair', () => {
+  const kernel = {
+    format: 1,
+    version: '7.2.11',
+    release: '7.2.11-arch1-1',
+    image: 'vmlinuz',
+    modules: 'lib/modules/7.2.11-arch1-1',
+  };
+  assert.equal(checkKernelDescriptor(kernel), kernel);
+  assert.throws(() => checkKernelDescriptor({ ...kernel, release: '7.2.10-arch1-1' }));
+  assert.throws(() => checkKernelDescriptor({ ...kernel, modules: 'lib/modules/other' }));
 });
