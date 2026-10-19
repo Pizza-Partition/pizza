@@ -1,0 +1,62 @@
+name: Release Pizza
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+env:
+  GH_TOKEN: ${{ github.token }}
+  ZIG: zig
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Install pinned toolchain and packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format libarchive-tools patchelf
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import { createHash } from 'node:crypto';
+          import { execFileSync } from 'node:child_process';
+          const lock = JSON.parse(fs.readFileSync('config/toolchain.json', 'utf8'));
+          const source = lock['x86_64-linux'];
+          const response = await fetch(source.url);
+          if (!response.ok) throw new Error(`Zig download: ${response.status}`);
+          const bytes = Buffer.from(await response.arrayBuffer());
+          if (createHash('sha256').update(bytes).digest('hex') !== source.sha256) throw new Error('Zig SHA-256 mismatch');
+          const directory = fs.mkdtempSync(`${process.env.RUNNER_TEMP}/pizza-zig-`);
+          fs.writeFileSync(`${directory}/zig.tar.xz`, bytes);
+          execFileSync('tar', ['-xJf', `${directory}/zig.tar.xz`, '-C', directory]);
+          const binary = `${directory}/zig-x86_64-linux-${lock.version}`;
+          fs.appendFileSync(process.env.GITHUB_PATH, `${binary}\n`);
+          JS
+      - name: Test and assemble with verified runtime
+        run: |
+          zig build deps
+          zig build fmt-check
+          zig build all test -Doptimize=safe
+          mkdir -p dist
+          cp zig-out/share/pizza/bundle.tar.gz dist/pizza-application-x86_64.tar.gz
+          tar -C zig-out/bin -czf dist/pizza-tools-x86_64.tar.gz pizza pizza-tools pizza-init
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
+      - name: Attest application and tools
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*.tar.gz
+      - name: Publish Pizza preview release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          ATTESTATION: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$ATTESTATION" dist/attestation.json
+          gh release create "$RELEASE_TAG" dist/* --verify-tag --prerelease --title "$RELEASE_TAG" --generate-notes

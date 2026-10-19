@@ -1,0 +1,9 @@
+{
+  "repository": "Pizza-Partition/pizza-bundle",
+  "repository_id": "1425566562",
+  "workflow": "Pizza-Partition/pizza-bundle/.github/workflows/release.yml",
+  "tag": "v0.1.2",
+  "commit": "1f5b0c1e0a2fd9d57960040f82f83769027be209",
+  "asset": "pizza-runtime-x86_64.tar.gz",
+  "sha256": "d8d133d728f2c43a16c13ce019890ad82d348624a6ea875fc26a9b863d52e4c9"
+}

@@ -1,0 +1,8 @@
+{
+  "baseline": "",
+  "kiosk-disabled": "pizza.kiosk=disable",
+  "journal-disabled": "pizza.journal=disable",
+  "fsync-failed": "pizza.journal=fsync_fail pizza.fsync_fail_step=7",
+  "step-failed": "pizza.step_fail=7",
+  "step-interrupted": "pizza.step_hang=7"
+}

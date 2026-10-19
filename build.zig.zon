@@ -1,0 +1,33 @@
+.{
+    .name = .pizza_transition,
+    .version = "0.1.0",
+    .fingerprint = 0xf34c1f157b9ef8cb,
+    .minimum_zig_version = "0.18.0-dev.146+35accc06e",
+    .dependencies = .{
+        .clap = .{
+            .url = "git+https://github.com/Hejsil/zig-clap#05faf3905e8548f5cc269a8836e154065e70128d",
+            .hash = "clap-0.12.0-oBajB4XpAQCF1WRKnD5KOKPsnwwT_NNdAJ7Ww3irYJac",
+        },
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis#0a1f55da77dcf99d638cf409b0c439e1542996d5",
+            .hash = "vaxis-0.6.0-BWNV_K4WDQC9AopHvrPY98uwQwG2kATn91rbbjvTX-XR",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "build",
+        ".zigversion",
+        "core",
+        "ui",
+        "tools",
+        "config",
+        "test",
+        "docs",
+        "README.md",
+        ".editorconfig",
+        ".prettierrc.json",
+        ".prettierignore",
+        ".clang-format",
+    },
+}

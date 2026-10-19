@@ -1,0 +1,12 @@
+{
+  "architecture": "x86_64",
+  "targets": [
+    { "id": "ubuntu-20.04", "transition": true, "fixture": null, "sha256": null },
+    { "id": "ubuntu-24.04", "transition": true, "fixture": null, "sha256": null },
+    { "id": "debian-12", "transition": true, "fixture": null, "sha256": null },
+    { "id": "rhel-8", "transition": false, "fixture": null, "sha256": null },
+    { "id": "rhel-9", "transition": false, "fixture": null, "sha256": null },
+    { "id": "fedora-current", "transition": false, "fixture": null, "sha256": null },
+    { "id": "arch", "transition": false, "fixture": null, "sha256": null }
+  ]
+}

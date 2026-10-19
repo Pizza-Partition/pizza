@@ -1,0 +1,11 @@
+.git/
+.serena/
+.clice/
+.zig-cache/
+zig-out/
+zig-pkg/
+ui/execution/gui/dist/
+ui/node_modules/
+.cache/
+test/artifacts/
+dist/
