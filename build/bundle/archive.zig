@@ -1,22 +1,20 @@
-//! Standard GNU tar/cpio/gzip operate on Pizza's application overlay only.
+//! Native TAR/gzip packaging and Linux newc application overlays.
 const std = @import("std");
 const utils = @import("utils");
 const bundle = @import("bundle");
 const files = @import("files.zig");
 const release = @import("release.zig");
-
 fn less(_: void, left: []const u8, right: []const u8) bool {
     return std.mem.lessThan(u8, left, right);
 }
 
-pub fn layer(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, overlay: []const u8, output: []const u8) !void {
-    const root = try std.Io.Dir.cwd().realPathFileAlloc(io, overlay, a);
+fn names(a: std.mem.Allocator, io: std.Io, root: []const u8) ![][]const u8 {
     var directory = try std.Io.Dir.cwd().openDir(io, root, .{ .iterate = true });
     defer directory.close(io);
     var walker = try directory.walk(a);
     defer walker.deinit();
-    var names: std.array_list.Managed([]const u8) = .init(a);
-    try names.append(".");
+    var entries: std.array_list.Managed([]const u8) = .init(a);
+    try entries.append(".");
     while (try walker.next(io)) |entry| {
         switch (entry.kind) {
             .directory, .file => {},
@@ -28,35 +26,69 @@ pub fn layer(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, ov
             },
             else => return error.InvalidApplicationFile,
         }
-        try names.append(try a.dupe(u8, entry.path));
+        try entries.append(try a.dupe(u8, entry.path));
     }
-    std.mem.sort([]const u8, names.items, {}, less);
-    var input: std.array_list.Managed(u8) = .init(a);
-    for (names.items) |name| {
-        try directory.setTimestamps(io, name, .{ .follow_symlinks = false, .access_timestamp = .{ .new = .{ .nanoseconds = 0 } }, .modify_timestamp = .{ .new = .{ .nanoseconds = 0 } } });
-        try input.appendSlice(name);
-        try input.append(0);
+    std.mem.sort([]const u8, entries.items, {}, less);
+    return entries.toOwnedSlice();
+}
+fn streamFile(io: std.Io, root: std.Io.Dir, name: []const u8, size: u64, writer: *std.Io.Writer) !void {
+    const file = try root.openFile(io, name, .{});
+    defer file.close(io);
+    var buffer: [64 * 1024]u8 = undefined;
+    var reader = file.reader(io, &buffer);
+    try reader.interface.streamExact64(writer, size);
+}
+fn newc(a: std.mem.Allocator, io: std.Io, overlay: []const u8, writer: *std.Io.Writer) !void {
+    const root = try std.Io.Dir.cwd().realPathFileAlloc(io, overlay, a);
+    const sorted = try names(a, io, root);
+    var directory = try std.Io.Dir.cwd().openDir(io, root, .{});
+    defer directory.close(io);
+    var archive: utils.newc.Writer = .{ .output = writer };
+    for (sorted) |name| {
+        const stat = try directory.statFile(io, name, .{ .follow_symlinks = false });
+        const permissions: u32 = @intCast(stat.permissions.toMode() & 0o777);
+        switch (stat.kind) {
+            .directory => try archive.header(name, 0o040000 | permissions, 0, 0, 0),
+            .file => {
+                try archive.header(name, 0o100000 | permissions, stat.size, 0, 0);
+                try streamFile(io, directory, name, stat.size, writer);
+                try archive.endData(stat.size);
+            },
+            .sym_link => {
+                var target: [std.fs.max_path_bytes]u8 = undefined;
+                const count = try directory.readLink(io, name, &target);
+                try archive.header(name, 0o120777, count, 0, 0);
+                try writer.writeAll(target[0..count]);
+                try archive.endData(count);
+            },
+            else => return error.InvalidApplicationFile,
+        }
     }
-    const list_path = try a.print("{s}.names", .{output});
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = list_path, .data = input.items });
-    defer std.Io.Dir.cwd().deleteFile(io, list_path) catch {};
-    const list = try std.Io.Dir.cwd().openFile(io, list_path, .{});
-    defer list.close(io);
-    const archive = try std.Io.Dir.cwd().createFile(io, output, .{ .exclusive = true });
-    defer archive.close(io);
-    try redirect(io, env, .{ .argv = &.{ "cpio", "--create", "--format=newc", "--reproducible", "--owner=0:0", "--null", "--quiet" }, .cwd = .{ .path = root }, .stdin = .{ .file = list }, .stdout = .{ .file = archive } });
-    try archive.sync(io);
+    try archive.finish();
 }
-
-fn redirect(io: std.Io, env: *std.process.Environ.Map, options: std.process.SpawnOptions) !void {
-    var configured = options;
-    configured.environ_map = env;
-    var child = try std.process.spawn(io, configured);
-    defer child.kill(io);
-    const term = try child.wait(io);
-    if (term != .exited or term.exited != 0) return error.CommandFailed;
+pub fn layer(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, overlay: []const u8, output: []const u8) !void {
+    _ = env;
+    const file = try std.Io.Dir.cwd().createFile(io, output, .{ .exclusive = true });
+    defer file.close(io);
+    var buffer: [64 * 1024]u8 = undefined;
+    var writer = file.writer(io, &buffer);
+    try newc(a, io, overlay, &writer.interface);
+    try writer.interface.flush();
+    try file.sync(io);
 }
-
+fn gzipLayer(a: std.mem.Allocator, io: std.Io, overlay: []const u8, output: []const u8) !void {
+    const file = try std.Io.Dir.cwd().createFile(io, output, .{ .exclusive = true });
+    defer file.close(io);
+    var buffer: [64 * 1024]u8 = undefined;
+    var writer = file.writer(io, &buffer);
+    const window = try a.alloc(u8, std.compress.flate.max_window_len);
+    defer a.free(window);
+    var compression = try std.compress.flate.Compress.init(&writer.interface, window, .gzip, .default);
+    try newc(a, io, overlay, &compression.writer);
+    try compression.finish();
+    try writer.interface.flush();
+    try file.sync(io);
+}
 pub fn appendFile(io: std.Io, source: []const u8, output: []const u8) !void {
     const input = try std.Io.Dir.cwd().openFile(io, source, .{});
     defer input.close(io);
@@ -75,7 +107,6 @@ pub fn appendFile(io: std.Io, source: []const u8, output: []const u8) !void {
     }
     try destination.sync(io);
 }
-
 pub fn image(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, root: []const u8, destination: []const u8) !void {
     _ = try @import("root.zig").verify(a, io, root);
     const lock = try release.readLock(a, io, try files.join(a, &.{ root, "release.json" }));
@@ -83,27 +114,62 @@ pub fn image(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, ro
     const output = try files.Output.init(a, io, destination, false);
     defer output.deinit(io);
     if (utils.filesystem.pathIsWithin(root, output.target)) return error.ImageMustBeOutsideSource;
-    const overlay = try files.join(a, &.{ output.temporary, "overlay" });
-    try utils.process.runInherited(io, env, &.{ "cp", "-a", "--", try files.join(a, &.{ root, "overlay" }), overlay });
-    const cpio = try files.join(a, &.{ output.temporary, "application.cpio" });
-    try layer(a, io, env, overlay, cpio);
-    const compressed_path = try files.join(a, &.{ output.temporary, "application.cpio.gz" });
-    const compressed = try std.Io.Dir.cwd().createFile(io, compressed_path, .{ .exclusive = true });
-    defer compressed.close(io);
-    try redirect(io, env, .{ .argv = &.{ "gzip", "-n", "-c", cpio }, .stdin = .ignore, .stdout = .{ .file = compressed } });
+    const compressed = try files.join(a, &.{ output.temporary, "application.cpio.gz" });
+    try gzipLayer(a, io, try files.join(a, &.{ root, "overlay" }), compressed);
     const combined = try files.join(a, &.{ output.temporary, "maint.img" });
     try std.Io.Dir.cwd().copyFile(try files.join(a, &.{ root, lock.asset }), .cwd(), combined, io, .{});
-    try appendFile(io, compressed_path, combined);
+    try appendFile(io, compressed, combined);
     try output.publish(io, combined);
 }
-
 pub fn pack(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, source: []const u8, destination: []const u8) !void {
+    _ = env;
     const root = try std.Io.Dir.cwd().realPathFileAlloc(io, source, a);
     _ = try @import("root.zig").verify(a, io, root);
+    try packTree(a, io, root, destination, null);
+}
+pub fn packTools(a: std.mem.Allocator, io: std.Io, source: []const u8, destination: []const u8) !void {
+    const root = try std.Io.Dir.cwd().realPathFileAlloc(io, source, a);
+    try packTree(a, io, root, destination, &.{ "pizza", "pizza-tools", "pizza-init" });
+}
+fn packTree(a: std.mem.Allocator, io: std.Io, root: []const u8, destination: []const u8, selection: ?[]const []const u8) !void {
     const output = try files.Output.init(a, io, destination, false);
     defer output.deinit(io);
     if (utils.filesystem.pathIsWithin(root, output.target)) return error.BundleArchiveMustBeOutsideSource;
-    const archive = try files.join(a, &.{ output.temporary, "bundle.tar.gz" });
-    try utils.process.runInherited(io, env, &.{ "tar", "--sort=name", "--mtime=@0", "--owner=0", "--group=0", "--numeric-owner", "-czf", archive, "-C", root, "." });
-    try output.publish(io, archive);
+    const archive_path = try files.join(a, &.{ output.temporary, "bundle.tar.gz" });
+    const file = try std.Io.Dir.cwd().createFile(io, archive_path, .{ .exclusive = true });
+    defer file.close(io);
+    var buffer: [64 * 1024]u8 = undefined;
+    var writer = file.writer(io, &buffer);
+    const window = try a.alloc(u8, std.compress.flate.max_window_len);
+    defer a.free(window);
+    var compression = try std.compress.flate.Compress.init(&writer.interface, window, .gzip, .default);
+    var tar: std.tar.Writer = .{ .underlying_writer = &compression.writer };
+    var directory = try std.Io.Dir.cwd().openDir(io, root, .{});
+    defer directory.close(io);
+    const selected = selection orelse try names(a, io, root);
+    for (selected) |name| {
+        const stat = try directory.statFile(io, name, .{ .follow_symlinks = false });
+        const options: std.tar.Writer.Options = .{ .mode = @intCast(stat.permissions.toMode() & 0o777), .mtime = 0 };
+        switch (stat.kind) {
+            .directory => try tar.writeDir(name, options),
+            .file => {
+                const input = try directory.openFile(io, name, .{});
+                defer input.close(io);
+                var input_buffer: [64 * 1024]u8 = undefined;
+                var reader = input.reader(io, &input_buffer);
+                try tar.writeFileStream(name, stat.size, &reader.interface, options);
+            },
+            .sym_link => {
+                var target: [std.fs.max_path_bytes]u8 = undefined;
+                const count = try directory.readLink(io, name, &target);
+                try tar.writeLink(name, target[0..count], options);
+            },
+            else => return error.InvalidApplicationFile,
+        }
+    }
+    try tar.finishPedantically();
+    try compression.finish();
+    try writer.interface.flush();
+    try file.sync(io);
+    try output.publish(io, archive_path);
 }

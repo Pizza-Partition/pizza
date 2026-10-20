@@ -275,7 +275,7 @@ pub fn build(b: *std.Build) void {
         exe.root_module.addImport("utils", core_utils);
         exe.root_module.addImport("journal", core_journal);
         exe.root_module.addImport("session", core_session);
-        exe.root_module.addImport("initramfs_archive", b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = target, .optimize = optimize }));
+        exe.root_module.addImport("initramfs_archive", b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = target, .optimize = optimize, .imports = &.{.{ .name = "utils", .module = core_utils }} }));
         if (std.mem.eql(u8, entry[0], "pizza-init"))
             maintenance = exe
         else
@@ -368,7 +368,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "journal", .module = journal },
                 .{ .name = "session", .module = fixture_session },
                 .{ .name = "clap", .module = clap.module("clap") },
-                .{ .name = "initramfs_archive", .module = b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = host_target, .optimize = .safe }) },
+                .{ .name = "initramfs_archive", .module = b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = host_target, .optimize = .safe, .imports = &.{.{ .name = "utils", .module = utils }} }) },
             },
         }),
     });
@@ -408,7 +408,7 @@ pub fn build(b: *std.Build) void {
     enableNewElfLinker(tests);
     tests.root_module.addImport("journal", core_journal);
     tests.root_module.addImport("session", core_session);
-    tests.root_module.addImport("initramfs_archive", b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = target, .optimize = optimize }));
+    tests.root_module.addImport("initramfs_archive", b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = target, .optimize = optimize, .imports = &.{.{ .name = "utils", .module = core_utils }} }));
     const test_ui = executionModules(b, target, optimize, proto, core_utils, core_journal, core_session);
     tests.root_module.addImport("maintenance", test_ui.maintenance);
     tests.root_module.addImport("execution_tui", test_ui.tui);
@@ -581,7 +581,7 @@ pub fn build(b: *std.Build) void {
 fn executionModules(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
+    optimize: ?std.builtin.OptimizeMode,
     proto: *std.Build.Module,
     utils: *std.Build.Module,
     journal: *std.Build.Module,
@@ -651,6 +651,17 @@ fn requireHostTool(
         );
 }
 
-fn sessionModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, proto: *std.Build.Module, utils: *std.Build.Module) *std.Build.Module {
-    return b.createModule(.{ .root_source_file = b.path("core/session.zig"), .target = target, .optimize = optimize, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "utils", .module = utils } } });
+fn sessionModule(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: ?std.builtin.OptimizeMode,
+    proto: *std.Build.Module,
+    utils: *std.Build.Module,
+) *std.Build.Module {
+    return b.createModule(.{
+        .root_source_file = b.path("core/session.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "utils", .module = utils } },
+    });
 }

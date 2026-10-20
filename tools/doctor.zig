@@ -40,9 +40,6 @@ pub fn run(
         "qemu-img",
     } else if (std.mem.eql(u8, profile, "image")) &.{
         "curl",
-        "cpio",
-        "gzip",
-        "tar",
     } else if (std.mem.eql(u8, profile, "kiosk")) &.{
         "pkg-config",
     } else if (std.mem.eql(u8, profile, "matrix")) &.{

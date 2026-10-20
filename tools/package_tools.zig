@@ -1,0 +1,39 @@
+const std = @import("std");
+const bundle_build = @import("bundle_build");
+const clap = @import("clap");
+
+const params = clap.parseParamsComptime(
+    \\-h, --help  Display this help and exit.
+    \\--directory <str>  Directory containing pizza, pizza-tools and pizza-init (required).
+    \\--output <str>  New release tar.gz outside the source bundle (required).
+);
+
+/// Parses command-line options and delegates release packaging to the bundle module.
+pub fn run(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    _: *std.process.Environ.Map,
+    _: []const u8,
+    argv: []const []const u8,
+) !void {
+    var iter: clap.args.SliceIterator = .{ .args = argv };
+    var diagnostic: clap.Diagnostic = .{};
+    var parsed = clap.parseEx(clap.Help, &params, clap.parsers.default, &iter, .{
+        .allocator = allocator,
+        .diagnostic = &diagnostic,
+    }) catch |err| {
+        std.log.err("Command line: {t}; argument: {s}", .{ err, diagnostic.arg });
+        return err;
+    };
+    defer parsed.deinit();
+    if (parsed.args.help != 0) {
+        try std.Io.File.stdout().writeStreamingAll(
+            io,
+            "Usage: pizza-tools pack-tools [options]\n",
+        );
+        return clap.helpToFile(io, .stdout(), clap.Help, &params, .{});
+    }
+    const root = parsed.args.directory orelse return error.MissingDirectory;
+    const output = parsed.args.output orelse return error.MissingOutput;
+    try bundle_build.packTools(allocator, io, root, output);
+}

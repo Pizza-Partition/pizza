@@ -33,7 +33,11 @@ authenticate the real published v0.3.1 fixture with native cryptography, reject 
 signatures, certificates, log bodies, SETs, Merkle proofs and checkpoints, and reject
 wrong publisher/workflow/tag/commit and artifact digests. They also preserve opaque base
 bytes, round-trip the application layer and reject every truncated certificate.
-These tests need no GitHub CLI, credentials or network.
+They also compare native TAR/gzip output with libarchive, cover long filenames and
+executable symlinks, reject unsafe extraction paths and corrupted gzip CRCs, and
+check archive reproducibility after source timestamps change.
+These tests need no GitHub CLI, credentials or network; bsdtar is only the independent
+archive interoperability oracle.
 `integration/bundle.zig` checks path confinement. Upstream archive construction,
 loader checks and actual WPE smoke tests belong to pizza-bundle's publishing CI.
 

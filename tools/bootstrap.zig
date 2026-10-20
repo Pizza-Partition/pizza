@@ -122,42 +122,14 @@ pub fn run(
             }),
         ))
             return error.ToolchainArchiveHashMismatch;
-        const listing = try utils.process.checkedOutput(
-            allocator,
-            io,
-            environ,
-            &.{
-                "tar",
-                "-tJf",
-                archive,
-            },
-        );
-        var lines = std.mem.splitScalar(u8, listing, '\n');
-        while (lines.next()) |entry| {
-            if (entry.len == 0)
-                continue;
-            if (std.fs.path.isAbsolute(entry))
-                return error.UnsafePath;
-            var parts = std.mem.splitScalar(u8, entry, '/');
-            if (!std.mem.eql(u8, parts.next() orelse "", filename[0 .. filename.len - 7]))
-                return error.UnsafePath;
-            while (parts.next()) |part| {
-                if (std.mem.eql(u8, part, ".."))
-                    return error.UnsafePath;
-            }
-        }
-        try utils.process.runInherited(
-            io,
-            environ,
-            &.{
-                "tar",
-                "-xJf",
-                archive,
-                "--no-same-owner",
-                "-C",
-                destination,
-            },
-        );
+        var random: [16]u8 = undefined;
+        std.Io.random(io, &random);
+        const staging = try std.fs.path.join(allocator, &.{ destination, try allocator.print(".pizza-zig-unpack-{s}", .{std.fmt.bytesToHex(random, .lower)}) });
+        try std.Io.Dir.cwd().createDir(io, staging, .fromMode(0o700));
+        defer std.Io.Dir.cwd().deleteTree(io, staging) catch {};
+        const expected_root = filename[0 .. filename.len - 7];
+        try utils.archive.extract(allocator, io, archive, staging, .xz, expected_root);
+        try std.Io.Dir.cwd().renamePreserve(try std.fs.path.join(allocator, &.{ staging, expected_root }), .cwd(), directory, io);
     }
     if (!std.mem.eql(
         u8,

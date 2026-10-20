@@ -11,7 +11,7 @@ pub fn bootstrap(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map
     const archive = try files.join(a, &.{ output.temporary, "tool.tar.gz" });
     try utils.process.runInherited(io, env, &.{ "curl", "--fail", "--location", "--silent", "--show-error", "--retry", "3", "--output", archive, lock.url });
     try release.verifyDigest(a, io, archive, lock.sha256);
-    try utils.process.runInherited(io, env, &.{ "tar", "-xzf", archive, "--no-same-owner", "-C", output.temporary });
+    try utils.archive.extract(a, io, archive, output.temporary, .gzip, null);
     try std.Io.Dir.cwd().deleteFile(io, archive);
     const version = try utils.process.checkedOutput(a, io, env, &.{ try files.join(a, &.{ output.temporary, "bin/patchelf" }), "--version" });
     if (!std.mem.eql(u8, std.mem.trim(u8, version, " \r\n\t"), try a.print("patchelf {s}", .{lock.version}))) return error.PatchelfVersionMismatch;

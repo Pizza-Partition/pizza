@@ -13,35 +13,13 @@ fn newc(
     entries: []const Entry,
 ) ![]const u8 {
     var output: std.Io.Writer.Allocating = .init(allocator);
-    const writer = &output.writer;
-    for (0..entries.len + 1) |index| {
-        const entry: Entry = if (index == entries.len) .{
-            .name = "TRAILER!!!",
-            .mode = 0,
-        } else entries[index];
-        const fields = [_]u32{
-            @intCast(index + 1),
-            entry.mode,
-            0,
-            0,
-            1,
-            0,
-            @intCast(entry.data.len),
-            0,
-            0,
-            entry.device_major,
-            entry.device_minor,
-            @intCast(entry.name.len + 1),
-            0,
-        };
-        try writer.writeAll("070701");
-        for (fields) |value| try writer.print("{x:0>8}", .{value});
-        try writer.writeAll(entry.name);
-        try writer.writeByte(0);
-        while (output.written().len % 4 != 0) try writer.writeByte(0);
-        try writer.writeAll(entry.data);
-        while (output.written().len % 4 != 0) try writer.writeByte(0);
+    var writer: @import("utils").newc.Writer = .{ .output = &output.writer };
+    for (entries) |entry| {
+        try writer.header(entry.name, entry.mode, entry.data.len, entry.device_major, entry.device_minor);
+        try output.writer.writeAll(entry.data);
+        try writer.endData(entry.data.len);
     }
+    try writer.finish();
     return output.toOwnedSlice();
 }
 

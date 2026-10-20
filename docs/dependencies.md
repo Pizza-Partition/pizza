@@ -13,8 +13,7 @@ pacman 负责签名验证、递归依赖解析与安装，patchelf 负责解释�
 
 ## 消费固定发布版本
 
-宿主需要锁定的 Zig、Node >=22、npm、curl、
-GNU cpio/gzip 和 GNU tar（测试另需 libarchive 的 bsdtar）。前端格式检查另需 clang-format。构建自动下载官方 patchelf 0.19.2 二进制并验证 `config/patchelf.json` 中的 SHA-256；已复现 Ubuntu 24.04 自带 0.18 会破坏当前 Zig ELF 布局，禁止用于应用组装。
+宿主需要锁定的 Zig、Node >=22、npm、curl（归档互操作测试另需 libarchive 的 bsdtar）。前端格式检查另需 clang-format。构建自动下载官方 patchelf 0.19.2 二进制并验证 `config/patchelf.json` 中的 SHA-256；已复现 Ubuntu 24.04 自带 0.18 会破坏当前 Zig ELF 布局，禁止用于应用组装。
 
 ```sh
 zig build deps
@@ -35,6 +34,14 @@ Rekor SET、Merkle inclusion proof 和签名 checkpoint，并将日志绑定到�
 下载结束后验签无需网络。RAM 维护环境仍使用已有的镜像摘要校验，并未增加运行时来源验证。
 没有跳过验证的生产选项。
 
+消费端 TAR 读写使用 `std.tar.Iterator` / `std.tar.Writer`，gzip 使用 `std.compress.flate`，
+Zig 工具链的 XZ 解包使用 `std.compress.xz`。流式打包不把整个基础镜像读进内存，
+归档条目排序，mtime/uid/gid 归零，保留普通文件权限与相对符号链接。newc 写入器由应用层和 console 层共享。
+工具解包拒绝路径穿越、绝对链接、逃逸链接及符号链接父目录；gzip 解包显式验证 CRC 和原始长度。
+固定 nightly 的 XZ 解码器尚未实现数据块校验和，因此只解码已经过完整 SHA-256 锁验证的官方工具链；
+它还按块分配内存，XZ 引导并非固定内存流式解压。
+CI 首次安装 Zig 时尚无编译器，仍用 runner 自带 tar 解包；获得 Zig 后的消费端归档与压缩均不调用外部命令。
+
 ```sh
 zig build tools -- fetch-bundle --destination /tmp/pizza-runtime
 zig build tools -- bootstrap-patchelf --destination /tmp/pizza-patchelf
@@ -50,7 +57,7 @@ zig build tools -- image --bundle /tmp/pizza-application --output /run/pizza/mai
 这里的 `verify-bundle` 验证下载目录里的三个原始发布产物与 attestation。
 `prepare-bundle` 再次验证产物，创建独立 overlay 目录放入本次构建的程序。
 应用目录是本地构建输出，应保持受控；对目录的后续修改不受原始归档的 attestation 保护。
-`image` 检查应用布局、静态 PID 1 与内核契约，重新验证基础层来源，然后把 GNU cpio 生成的应用层追加到基础 initramfs，不做上游内容审计。
+`image` 检查应用布局、静态 PID 1 与内核契约，重新验证基础层来源，然后把原生 newc/gzip 写入器生成的应用层追加到基础 initramfs，不做上游内容审计。
 
 ## 布局与版本契约
 

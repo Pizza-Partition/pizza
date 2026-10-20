@@ -32,7 +32,7 @@ zig build -Doptimize=safe
 `zig build tools -- COMMAND [ARGS]` 可直接运行工具命令；安装后的入口为
 `zig-out/bin/pizza-tools`。发布产物下载、摘要与来源策略、应用组装均由 `build/bundle/` 中的 Zig 实现，
 通过 `build.zig` 的原生构建步骤接入。签名验证使用 `std.crypto.sign`，包括 Fulcio 证书链、DSSE、Rekor 日志与 SCT；
-信任根固定内置，验签离线完成，不需要 GitHub CLI。下载使用 curl，ELF 与归档操作调用 patchelf、GNU tar/cpio/gzip。
+信任根固定内置，验签离线完成，不需要 GitHub CLI。下载使用 curl，ELF 修改使用 patchelf；TAR、gzip、XZ 解包及 newc 应用层均使用 Zig 原生实现。
 
 测试入口位于 `test/main.zig`，由 `zig build test-smoke`、`test-maintenance`、
 `test-journal`、`test-matrix` 分别运行。`zig build test-runners` 安装可选宿主测试入口与

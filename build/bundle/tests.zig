@@ -187,7 +187,7 @@ test "bounded certificate parser rejects every truncation without panicking" {
     for (0..raw.len) |len| if (certificate.Certificate.parse(raw[0..len])) |_| return error.TruncatedCertificateAccepted else |_| {};
 }
 
-test "native concatenation preserves opaque base and independent application gzip member" {
+test "native concatenation preserves opaque base bytes exactly" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -221,4 +221,83 @@ test "SCT signature verification is enforced independently of certificate signat
     const offset = @intFromPtr(extension.ptr) - @intFromPtr(raw.ptr);
     raw[offset + extension.len - 1] ^= 1;
     if (transparency.sct(a, root, try certificate.Certificate.parse(raw), issuer, signed_time + 86400)) |_| return error.ForgedSctAccepted else |_| {}
+}
+
+test "native tar gzip is deterministic, preserves executable links and long names, and matches libarchive" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = std.testing.io;
+    const parent = try utils.filesystem.createTemporaryDirectory(a, io, "pizza-native-tar-");
+    defer std.Io.Dir.cwd().deleteTree(io, parent) catch {};
+    const root = try files.join(a, &.{ parent, "package" });
+    const overlay = try files.join(a, &.{ root, "overlay" });
+    try std.Io.Dir.cwd().createDirPath(io, try files.join(a, &.{ overlay, "panel" }));
+    for ([_][2][]const u8{ .{ "init", "init" }, .{ "app", "app" }, .{ "panel/index.html", "panel" } }) |entry| {
+        const output = try std.Io.Dir.cwd().createFile(io, try files.join(a, &.{ overlay, entry[0] }), .{ .permissions = .fromMode(0o755) });
+        try output.writePositionalAll(io, entry[1], 0);
+        output.close(io);
+    }
+    const long_name = "overlay/" ++ @as([120]u8, @splat('a'));
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try files.join(a, &.{ root, long_name }), .data = "long name" });
+    try std.Io.Dir.cwd().symLink(io, "panel", try files.join(a, &.{ overlay, "panel-alias" }), .{});
+    try files.writeJson(a, io, try files.join(a, &.{ root, "manifest.json" }), .{ .format = @as(u16, 3), .kind = "pizza-application", .layout = "base-plus-overlay", .architecture = "x86_64", .profile = "wpe-platform-v2", .working_directory = "bundle-root", .components = .{ .@"pizza-init" = "overlay/init", .@"pizza-maint" = "overlay/app", .@"panel-assets" = "overlay/panel/index.html" } });
+    const first = try files.join(a, &.{ parent, "first.tar.gz" });
+    const second = try files.join(a, &.{ parent, "second.tar.gz" });
+    var env: std.process.Environ.Map = .init(a);
+    try env.put("PATH", "/nonexistent");
+    try archive.pack(a, io, &env, root, first);
+    try std.Io.Dir.cwd().setTimestampsNow(io, try files.join(a, &.{ overlay, "init" }), .{});
+    try archive.pack(a, io, &env, root, second);
+    try std.testing.expectEqualStrings(try utils.filesystem.hashFileSha256(a, io, first), try utils.filesystem.hashFileSha256(a, io, second));
+    const native = try files.join(a, &.{ parent, "native" });
+    const independent = try files.join(a, &.{ parent, "libarchive" });
+    try std.Io.Dir.cwd().createDirPath(io, native);
+    try std.Io.Dir.cwd().createDirPath(io, independent);
+    try utils.archive.extract(a, io, first, native, .gzip, null);
+    try env.put("PATH", "/usr/bin:/bin");
+    try utils.process.runInherited(io, &env, &.{ "bsdtar", "-xf", first, "--no-same-owner", "-C", independent });
+    for ([_][]const u8{ native, independent }) |extracted| {
+        try std.testing.expectEqualStrings("panel", try std.Io.Dir.cwd().readFileAlloc(io, try files.join(a, &.{ extracted, "overlay/panel-alias/index.html" }), a, .limited(100)));
+        try std.testing.expectEqualStrings("long name", try std.Io.Dir.cwd().readFileAlloc(io, try files.join(a, &.{ extracted, long_name }), a, .limited(100)));
+        try std.Io.Dir.cwd().access(io, try files.join(a, &.{ extracted, "overlay/init" }), .{ .execute = true });
+    }
+    const encoded = try std.Io.Dir.cwd().readFileAlloc(io, first, a, .limited(1024 * 1024));
+    encoded[encoded.len - 8] ^= 1;
+    const bad = try files.join(a, &.{ parent, "bad.tar.gz" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = bad, .data = encoded });
+    try std.testing.expectError(error.GzipChecksumMismatch, utils.archive.extract(a, io, bad, native, .gzip, null));
+}
+
+test "native tar extraction rejects traversal, escaping links and symlink parents" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = std.testing.io;
+    const parent = try utils.filesystem.createTemporaryDirectory(a, io, "pizza-tar-confinement-");
+    defer std.Io.Dir.cwd().deleteTree(io, parent) catch {};
+    for ([_][]const u8{ "/escape", "../escape", "safe/../../escape" }) |name| {
+        var bytes: std.Io.Writer.Allocating = .init(a);
+        var tar: std.tar.Writer = .{ .underlying_writer = &bytes.writer };
+        try tar.writeFileBytes(name, "escape", .{});
+        var input: std.Io.Reader = .fixed(bytes.written());
+        try std.testing.expectError(error.UnsafeArchivePath, utils.archive.extractTar(a, io, &input, parent, null));
+    }
+    for ([_][]const u8{ "/etc", "../../escape" }) |target| {
+        var bytes: std.Io.Writer.Allocating = .init(a);
+        var tar: std.tar.Writer = .{ .underlying_writer = &bytes.writer };
+        try tar.writeLink("alias", target, .{});
+        var input: std.Io.Reader = .fixed(bytes.written());
+        try std.testing.expectError(error.UnsafeArchiveLink, utils.archive.extractTar(a, io, &input, parent, null));
+    }
+    var bytes: std.Io.Writer.Allocating = .init(a);
+    var tar: std.tar.Writer = .{ .underlying_writer = &bytes.writer };
+    try tar.writeDir("inside", .{});
+    try tar.writeLink("alias", "inside", .{});
+    try tar.writeFileBytes("alias/file", "must not follow a link", .{});
+    var input: std.Io.Reader = .fixed(bytes.written());
+    try std.testing.expectError(error.ArchiveSymlinkParent, utils.archive.extractTar(a, io, &input, parent, null));
+    try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(io, try files.join(a, &.{ parent, "inside/file" }), .{}));
+    input = .fixed(bytes.written());
+    try std.testing.expectError(error.UnsafeArchivePath, utils.archive.extractTar(a, io, &input, parent, "expected-root"));
 }
