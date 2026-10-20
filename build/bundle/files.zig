@@ -2,18 +2,6 @@
 const std = @import("std");
 const utils = @import("utils");
 
-pub fn join(a: std.mem.Allocator, parts: []const []const u8) ![]const u8 {
-    return std.fs.path.join(a, parts);
-}
-
-pub fn readJson(comptime T: type, a: std.mem.Allocator, io: std.Io, path: []const u8) !T {
-    return std.json.parseFromSliceLeaky(T, a, try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(1024 * 1024)), .{ .ignore_unknown_fields = true });
-}
-
-pub fn writeJson(a: std.mem.Allocator, io: std.Io, path: []const u8, value: anytype) !void {
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = try a.print("{s}\n", .{try std.json.Stringify.valueAlloc(a, value, .{ .whitespace = .indent_2 })}) });
-}
-
 pub const Output = struct {
     target: []const u8,
     temporary: []const u8,
@@ -39,13 +27,9 @@ pub const Output = struct {
         try std.Io.Dir.cwd().createDirPath(io, parent);
         var random: [16]u8 = undefined;
         std.Io.random(io, &random);
-        const temporary = try join(a, &.{ parent, try a.print(".pizza-build-{s}", .{std.fmt.bytesToHex(random, .lower)}) });
+        const temporary = try std.fs.path.join(a, &.{ parent, try a.print(".pizza-build-{s}", .{std.fmt.bytesToHex(random, .lower)}) });
         try std.Io.Dir.cwd().createDir(io, temporary, .default_dir);
         return .{ .target = target, .temporary = temporary };
-    }
-
-    pub fn publish(self: Output, io: std.Io, source: []const u8) !void {
-        try std.Io.Dir.cwd().renamePreserve(source, .cwd(), self.target, io);
     }
 
     pub fn deinit(self: Output, io: std.Io) void {

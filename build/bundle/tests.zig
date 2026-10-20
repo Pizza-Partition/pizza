@@ -33,7 +33,7 @@ test "modified release bytes are rejected before signature verification" {
     defer std.Io.Dir.cwd().deleteTree(io, root) catch {};
     var lock = try release.readLock(a, io, release.lock_path);
     lock.sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try files.join(a, &.{ root, lock.asset }), .data = "modified" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, lock.asset }), .data = "modified" });
     var env: std.process.Environ.Map = .init(a);
     try env.put("PATH", "/nonexistent");
     try std.testing.expectError(error.ReleaseDigestMismatch, release.verify(a, io, &env, root, lock));
@@ -46,29 +46,29 @@ test "application newc preserves executable and relative symlink and is determin
     const io = std.testing.io;
     const root = try utils.filesystem.createTemporaryDirectory(a, io, "pizza-layer-");
     defer std.Io.Dir.cwd().deleteTree(io, root) catch {};
-    const overlay = try files.join(a, &.{ root, "overlay" });
-    const panel = try files.join(a, &.{ overlay, "opt/pizza/panel" });
+    const overlay = try std.fs.path.join(a, &.{ root, "overlay" });
+    const panel = try std.fs.path.join(a, &.{ overlay, "opt/pizza/panel" });
     try std.Io.Dir.cwd().createDirPath(io, panel);
-    const init = try std.Io.Dir.cwd().createFile(io, try files.join(a, &.{ overlay, "init" }), .{ .permissions = .fromMode(0o755) });
+    const init = try std.Io.Dir.cwd().createFile(io, try std.fs.path.join(a, &.{ overlay, "init" }), .{ .permissions = .fromMode(0o755) });
     try init.writePositionalAll(io, "application", 0);
     init.close(io);
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try files.join(a, &.{ panel, "index.html" }), .data = "panel" });
-    try std.Io.Dir.cwd().symLink(io, "opt/pizza/panel", try files.join(a, &.{ overlay, "panel-link" }), .{});
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ panel, "index.html" }), .data = "panel" });
+    try std.Io.Dir.cwd().symLink(io, "opt/pizza/panel", try std.fs.path.join(a, &.{ overlay, "panel-link" }), .{});
     var env: std.process.Environ.Map = .init(a);
     try env.put("PATH", "/usr/bin:/bin");
-    const first = try files.join(a, &.{ root, "first.cpio" });
-    const second = try files.join(a, &.{ root, "second.cpio" });
+    const first = try std.fs.path.join(a, &.{ root, "first.cpio" });
+    const second = try std.fs.path.join(a, &.{ root, "second.cpio" });
     try archive.layer(a, io, &env, overlay, first);
-    try std.Io.Dir.cwd().setTimestampsNow(io, try files.join(a, &.{ overlay, "init" }), .{});
+    try std.Io.Dir.cwd().setTimestampsNow(io, try std.fs.path.join(a, &.{ overlay, "init" }), .{});
     try archive.layer(a, io, &env, overlay, second);
     try std.testing.expectEqualStrings(try utils.filesystem.hashFileSha256(a, io, first), try utils.filesystem.hashFileSha256(a, io, second));
-    const restored = try files.join(a, &.{ root, "restored" });
+    const restored = try std.fs.path.join(a, &.{ root, "restored" });
     try std.Io.Dir.cwd().createDirPath(io, restored);
     try utils.process.runInherited(io, &env, &.{ "bsdtar", "-xf", first, "--no-same-owner", "-C", restored });
-    try std.testing.expectEqualStrings("panel", try std.Io.Dir.cwd().readFileAlloc(io, try files.join(a, &.{ restored, "panel-link/index.html" }), a, .limited(100)));
-    try std.Io.Dir.cwd().access(io, try files.join(a, &.{ restored, "init" }), .{ .execute = true });
-    try std.Io.Dir.cwd().symLink(io, "/etc/passwd", try files.join(a, &.{ overlay, "external" }), .{});
-    try std.testing.expectError(error.EscapingSymlink, archive.layer(a, io, &env, overlay, try files.join(a, &.{ root, "bad.cpio" })));
+    try std.testing.expectEqualStrings("panel", try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(a, &.{ restored, "panel-link/index.html" }), a, .limited(100)));
+    try std.Io.Dir.cwd().access(io, try std.fs.path.join(a, &.{ restored, "init" }), .{ .execute = true });
+    try std.Io.Dir.cwd().symLink(io, "/etc/passwd", try std.fs.path.join(a, &.{ overlay, "external" }), .{});
+    try std.testing.expectError(error.EscapingSymlink, archive.layer(a, io, &env, overlay, try std.fs.path.join(a, &.{ root, "bad.cpio" })));
 }
 
 test "output refuses existing data and publishes atomically without replacing a competing writer" {
@@ -78,19 +78,19 @@ test "output refuses existing data and publishes atomically without replacing a 
     const io = std.testing.io;
     const root = try utils.filesystem.createTemporaryDirectory(a, io, "pizza-output-");
     defer std.Io.Dir.cwd().deleteTree(io, root) catch {};
-    const target = try files.join(a, &.{ root, "result" });
+    const target = try std.fs.path.join(a, &.{ root, "result" });
     const output = try files.Output.init(a, io, target, false);
     defer output.deinit(io);
-    const candidate = try files.join(a, &.{ output.temporary, "file" });
+    const candidate = try std.fs.path.join(a, &.{ output.temporary, "file" });
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = candidate, .data = "new" });
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = "existing" });
-    try std.testing.expectError(error.PathAlreadyExists, output.publish(io, candidate));
+    try std.testing.expectError(error.PathAlreadyExists, std.Io.Dir.cwd().renamePreserve(candidate, .cwd(), output.target, io));
     try std.testing.expectError(error.OutputAlreadyExists, files.Output.init(a, io, target, false));
     try std.testing.expectEqualStrings("existing", try std.Io.Dir.cwd().readFileAlloc(io, target, a, .limited(100)));
 }
 
 const sigstore = @import("sigstore.zig");
-const encoding = @import("encoding.zig");
+const schema = @import("schema.zig");
 const certificate = @import("certificate.zig");
 const fixture_path = "test/fixtures/sigstore/pizza-bundle-v0.3.1.json";
 const signed_time = 1792416063;
@@ -103,19 +103,21 @@ fn assets(lock: release.Lock) [3][2][]const u8 {
 fn rejected(a: std.mem.Allocator, bytes: []const u8, identity: sigstore.Policy, subjects: []const [2][]const u8, now: u64) !void {
     if (sigstore.verify(a, bytes, identity, subjects, now)) |_| return error.ForgedAttestationAccepted else |_| {}
 }
-fn change(a: std.mem.Allocator, bytes: []const u8, path: []const []const u8, value: encoding.Value) ![]const u8 {
-    var root = try encoding.json(a, bytes);
-    var current: *encoding.Value = &root;
+fn change(a: std.mem.Allocator, bytes: []const u8, path: []const []const u8, value: std.json.Value) ![]const u8 {
+    var root = try std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{ .max_value_len = 1024 * 1024 });
+    var current: *std.json.Value = &root;
     for (path[0 .. path.len - 1]) |key| current = if (current.* == .array) &current.array.items[try std.fmt.parseInt(usize, key, 10)] else current.object.getPtr(key) orelse return error.MissingField;
     try current.object.put(a, path[path.len - 1], value);
     return std.json.Stringify.valueAlloc(a, root, .{});
 }
 fn altered(a: std.mem.Allocator, bytes: []const u8, path: []const []const u8) ![]const u8 {
-    var value = try encoding.json(a, bytes);
-    for (path) |key| value = if (value == .array) value.array.items[try std.fmt.parseInt(usize, key, 10)] else try encoding.field(value, key);
-    const raw = try encoding.decode(a, try encoding.string(value));
+    var value = try std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{ .max_value_len = 1024 * 1024 });
+    for (path) |key| value = if (value == .array) value.array.items[try std.fmt.parseInt(usize, key, 10)] else value.object.get(key) orelse return error.MissingField;
+    const raw = try a.alloc(u8, try std.base64.standard.Decoder.calcSizeForSlice(value.string));
+    try std.base64.standard.Decoder.decode(raw, value.string);
     raw[raw.len / 2] ^= 1;
-    return change(a, bytes, path, .{ .string = try encoding.encode(a, raw) });
+    const encoded = std.base64.standard.Encoder.encode(try a.alloc(u8, std.base64.standard.Encoder.calcSize(raw.len)), raw);
+    return change(a, bytes, path, .{ .string = encoded });
 }
 
 test "native Sigstore authenticates the actual published bundle without subprocesses" {
@@ -165,24 +167,26 @@ test "native Sigstore rejects tampered signatures, certificates, logs, proofs an
         &.{ "verificationMaterial", "tlogEntries", "0", "inclusionProof", "logIndex" },
         &.{ "verificationMaterial", "tlogEntries", "0", "inclusionProof", "treeSize" },
     }) |path| try rejected(a, try change(a, bytes, path, .{ .string = "1" }), policy(lock), &assets(lock), signed_time + 86400);
-    const root = try encoding.json(a, bytes);
-    const material = try encoding.field(root, "verificationMaterial");
-    const entries = try encoding.array(try encoding.field(material, "tlogEntries"));
-    const proof = try encoding.field(entries[0], "inclusionProof");
-    var checkpoint = try a.dupe(u8, try encoding.text(try encoding.field(proof, "checkpoint"), "envelope"));
+    const root = try std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{ .max_value_len = 1024 * 1024 });
+    const material = root.object.get("verificationMaterial").?;
+    const entries = material.object.get("tlogEntries").?.array.items;
+    const proof = entries[0].object.get("inclusionProof").?;
+    var checkpoint = try a.dupe(u8, proof.object.get("checkpoint").?.object.get("envelope").?.string);
     checkpoint[checkpoint.len - 8] ^= 1;
     try rejected(a, try change(a, bytes, &.{ "verificationMaterial", "tlogEntries", "0", "inclusionProof", "checkpoint", "envelope" }, .{ .string = checkpoint }), policy(lock), &assets(lock), signed_time + 86400);
-    var hashes = try encoding.array(try encoding.field(proof, "hashes"));
+    var hashes = proof.object.get("hashes").?.array.items;
     hashes[0] = .{ .string = hashes[1].string };
-    try rejected(a, try change(a, bytes, &.{ "verificationMaterial", "tlogEntries", "0", "inclusionProof", "hashes" }, .{ .array = std.array_list.Managed(encoding.Value).fromOwnedSlice(a, hashes) }), policy(lock), &assets(lock), signed_time + 86400);
+    try rejected(a, try change(a, bytes, &.{ "verificationMaterial", "tlogEntries", "0", "inclusionProof", "hashes" }, .{ .array = std.array_list.Managed(std.json.Value).fromOwnedSlice(a, hashes) }), policy(lock), &assets(lock), signed_time + 86400);
 }
 
 test "bounded certificate parser rejects every truncation without panicking" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const root = try encoding.json(a, try std.Io.Dir.cwd().readFileAlloc(std.testing.io, fixture_path, a, .limited(1024 * 1024)));
-    const raw = try encoding.decode(a, try encoding.text(try encoding.field(try encoding.field(root, "verificationMaterial"), "certificate"), "rawBytes"));
+    const root = try std.json.parseFromSliceLeaky(schema.Bundle, a, try std.Io.Dir.cwd().readFileAlloc(std.testing.io, fixture_path, a, .limited(1024 * 1024)), .{ .ignore_unknown_fields = true });
+    const encoded = root.verificationMaterial.certificate.rawBytes;
+    const raw = try a.alloc(u8, try std.base64.standard.Decoder.calcSizeForSlice(encoded));
+    try std.base64.standard.Decoder.decode(raw, encoded);
     _ = try certificate.Certificate.parse(raw);
     for (0..raw.len) |len| if (certificate.Certificate.parse(raw[0..len])) |_| return error.TruncatedCertificateAccepted else |_| {};
 }
@@ -194,8 +198,8 @@ test "native concatenation preserves opaque base bytes exactly" {
     const io = std.testing.io;
     const root = try utils.filesystem.createTemporaryDirectory(a, io, "pizza-append-");
     defer std.Io.Dir.cwd().deleteTree(io, root) catch {};
-    const image = try files.join(a, &.{ root, "maint.img" });
-    const layer = try files.join(a, &.{ root, "application.gz" });
+    const image = try std.fs.path.join(a, &.{ root, "maint.img" });
+    const layer = try std.fs.path.join(a, &.{ root, "application.gz" });
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = image, .data = "opaque producer base" });
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = layer, .data = "application member" });
     try archive.appendFile(io, layer, image);
@@ -206,21 +210,24 @@ test "SCT signature verification is enforced independently of certificate signat
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const root = try encoding.json(a, try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "build/bundle/trust/sigstore-public-good.json", a, .limited(1024 * 1024)));
-    const fixture = try encoding.json(a, try std.Io.Dir.cwd().readFileAlloc(std.testing.io, fixture_path, a, .limited(1024 * 1024)));
-    const raw = try encoding.decode(a, try encoding.text(try encoding.field(try encoding.field(fixture, "verificationMaterial"), "certificate"), "rawBytes"));
+    const root = try std.json.parseFromSliceLeaky(schema.TrustRoot, a, try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "build/bundle/trust/sigstore-public-good.json", a, .limited(1024 * 1024)), .{ .ignore_unknown_fields = true });
+    const fixture = try std.json.parseFromSliceLeaky(schema.Bundle, a, try std.Io.Dir.cwd().readFileAlloc(std.testing.io, fixture_path, a, .limited(1024 * 1024)), .{ .ignore_unknown_fields = true });
+    const encoded = fixture.verificationMaterial.certificate.rawBytes;
+    const raw = try a.alloc(u8, try std.base64.standard.Decoder.calcSizeForSlice(encoded));
+    try std.base64.standard.Decoder.decode(raw, encoded);
     const leaf = try certificate.Certificate.parse(raw);
-    const authorities = try encoding.array(try encoding.field(root, "certificateAuthorities"));
-    const chain = try encoding.array(try encoding.field(try encoding.field(authorities[1], "certChain"), "certificates"));
-    const issuer = try certificate.Certificate.parse(try encoding.decode(a, try encoding.text(chain[0], "rawBytes")));
+    const chain = root.certificateAuthorities[1].certChain.certificates;
+    const issuer_der = try a.alloc(u8, try std.base64.standard.Decoder.calcSizeForSlice(chain[0].rawBytes));
+    try std.base64.standard.Decoder.decode(issuer_der, chain[0].rawBytes);
+    const issuer = try certificate.Certificate.parse(issuer_der);
     try leaf.verify(issuer, signed_time);
     if (leaf.verify(issuer, signed_time + 86400)) |_| return error.ExpiredCertificateAccepted else |_| {}
     const transparency = @import("transparency.zig");
-    try transparency.sct(a, root, leaf, issuer, signed_time + 86400);
+    try transparency.sct(a, root.ctlogs, leaf, issuer, signed_time + 86400);
     const extension = try leaf.extension(certificate.sct_oid);
     const offset = @intFromPtr(extension.ptr) - @intFromPtr(raw.ptr);
     raw[offset + extension.len - 1] ^= 1;
-    if (transparency.sct(a, root, try certificate.Certificate.parse(raw), issuer, signed_time + 86400)) |_| return error.ForgedSctAccepted else |_| {}
+    if (transparency.sct(a, root.ctlogs, try certificate.Certificate.parse(raw), issuer, signed_time + 86400)) |_| return error.ForgedSctAccepted else |_| {}
 }
 
 test "native tar gzip is deterministic, preserves executable links and long names, and matches libarchive" {
@@ -230,41 +237,41 @@ test "native tar gzip is deterministic, preserves executable links and long name
     const io = std.testing.io;
     const parent = try utils.filesystem.createTemporaryDirectory(a, io, "pizza-native-tar-");
     defer std.Io.Dir.cwd().deleteTree(io, parent) catch {};
-    const root = try files.join(a, &.{ parent, "package" });
-    const overlay = try files.join(a, &.{ root, "overlay" });
-    try std.Io.Dir.cwd().createDirPath(io, try files.join(a, &.{ overlay, "panel" }));
+    const root = try std.fs.path.join(a, &.{ parent, "package" });
+    const overlay = try std.fs.path.join(a, &.{ root, "overlay" });
+    try std.Io.Dir.cwd().createDirPath(io, try std.fs.path.join(a, &.{ overlay, "panel" }));
     for ([_][2][]const u8{ .{ "init", "init" }, .{ "app", "app" }, .{ "panel/index.html", "panel" } }) |entry| {
-        const output = try std.Io.Dir.cwd().createFile(io, try files.join(a, &.{ overlay, entry[0] }), .{ .permissions = .fromMode(0o755) });
+        const output = try std.Io.Dir.cwd().createFile(io, try std.fs.path.join(a, &.{ overlay, entry[0] }), .{ .permissions = .fromMode(0o755) });
         try output.writePositionalAll(io, entry[1], 0);
         output.close(io);
     }
     const long_name = "overlay/" ++ @as([120]u8, @splat('a'));
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try files.join(a, &.{ root, long_name }), .data = "long name" });
-    try std.Io.Dir.cwd().symLink(io, "panel", try files.join(a, &.{ overlay, "panel-alias" }), .{});
-    try files.writeJson(a, io, try files.join(a, &.{ root, "manifest.json" }), .{ .format = @as(u16, 3), .kind = "pizza-application", .layout = "base-plus-overlay", .architecture = "x86_64", .profile = "wpe-platform-v2", .working_directory = "bundle-root", .components = .{ .@"pizza-init" = "overlay/init", .@"pizza-maint" = "overlay/app", .@"panel-assets" = "overlay/panel/index.html" } });
-    const first = try files.join(a, &.{ parent, "first.tar.gz" });
-    const second = try files.join(a, &.{ parent, "second.tar.gz" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, long_name }), .data = "long name" });
+    try std.Io.Dir.cwd().symLink(io, "panel", try std.fs.path.join(a, &.{ overlay, "panel-alias" }), .{});
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ root, "manifest.json" }), .data = try a.print("{s}\n", .{try std.json.Stringify.valueAlloc(a, .{ .format = @as(u16, 3), .kind = "pizza-application", .layout = "base-plus-overlay", .architecture = "x86_64", .profile = "wpe-platform-v2", .working_directory = "bundle-root", .components = .{ .@"pizza-init" = "overlay/init", .@"pizza-maint" = "overlay/app", .@"panel-assets" = "overlay/panel/index.html" } }, .{ .whitespace = .indent_2 })}) });
+    const first = try std.fs.path.join(a, &.{ parent, "first.tar.gz" });
+    const second = try std.fs.path.join(a, &.{ parent, "second.tar.gz" });
     var env: std.process.Environ.Map = .init(a);
     try env.put("PATH", "/nonexistent");
     try archive.pack(a, io, &env, root, first);
-    try std.Io.Dir.cwd().setTimestampsNow(io, try files.join(a, &.{ overlay, "init" }), .{});
+    try std.Io.Dir.cwd().setTimestampsNow(io, try std.fs.path.join(a, &.{ overlay, "init" }), .{});
     try archive.pack(a, io, &env, root, second);
     try std.testing.expectEqualStrings(try utils.filesystem.hashFileSha256(a, io, first), try utils.filesystem.hashFileSha256(a, io, second));
-    const native = try files.join(a, &.{ parent, "native" });
-    const independent = try files.join(a, &.{ parent, "libarchive" });
+    const native = try std.fs.path.join(a, &.{ parent, "native" });
+    const independent = try std.fs.path.join(a, &.{ parent, "libarchive" });
     try std.Io.Dir.cwd().createDirPath(io, native);
     try std.Io.Dir.cwd().createDirPath(io, independent);
     try utils.archive.extract(a, io, first, native, .gzip, null);
     try env.put("PATH", "/usr/bin:/bin");
     try utils.process.runInherited(io, &env, &.{ "bsdtar", "-xf", first, "--no-same-owner", "-C", independent });
     for ([_][]const u8{ native, independent }) |extracted| {
-        try std.testing.expectEqualStrings("panel", try std.Io.Dir.cwd().readFileAlloc(io, try files.join(a, &.{ extracted, "overlay/panel-alias/index.html" }), a, .limited(100)));
-        try std.testing.expectEqualStrings("long name", try std.Io.Dir.cwd().readFileAlloc(io, try files.join(a, &.{ extracted, long_name }), a, .limited(100)));
-        try std.Io.Dir.cwd().access(io, try files.join(a, &.{ extracted, "overlay/init" }), .{ .execute = true });
+        try std.testing.expectEqualStrings("panel", try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(a, &.{ extracted, "overlay/panel-alias/index.html" }), a, .limited(100)));
+        try std.testing.expectEqualStrings("long name", try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(a, &.{ extracted, long_name }), a, .limited(100)));
+        try std.Io.Dir.cwd().access(io, try std.fs.path.join(a, &.{ extracted, "overlay/init" }), .{ .execute = true });
     }
     const encoded = try std.Io.Dir.cwd().readFileAlloc(io, first, a, .limited(1024 * 1024));
     encoded[encoded.len - 8] ^= 1;
-    const bad = try files.join(a, &.{ parent, "bad.tar.gz" });
+    const bad = try std.fs.path.join(a, &.{ parent, "bad.tar.gz" });
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = bad, .data = encoded });
     try std.testing.expectError(error.GzipChecksumMismatch, utils.archive.extract(a, io, bad, native, .gzip, null));
 }
@@ -297,7 +304,26 @@ test "native tar extraction rejects traversal, escaping links and symlink parent
     try tar.writeFileBytes("alias/file", "must not follow a link", .{});
     var input: std.Io.Reader = .fixed(bytes.written());
     try std.testing.expectError(error.ArchiveSymlinkParent, utils.archive.extractTar(a, io, &input, parent, null));
-    try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(io, try files.join(a, &.{ parent, "inside/file" }), .{}));
+    try std.testing.expectError(error.FileNotFound, std.Io.Dir.cwd().access(io, try std.fs.path.join(a, &.{ parent, "inside/file" }), .{}));
     input = .fixed(bytes.written());
     try std.testing.expectError(error.UnsafeArchivePath, utils.archive.extractTar(a, io, &input, parent, "expected-root"));
+}
+
+test "typed attestation parsing rejects missing fields and incorrect JSON types" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const lock = try release.readLock(a, std.testing.io, "test/fixtures/sigstore/pizza-bundle-v0.3.1.lock.json");
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, fixture_path, a, .limited(1024 * 1024));
+    for ([_][]const u8{ "{}", "[]", "null", "{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\"}" }) |missing|
+        try rejected(a, missing, policy(lock), &assets(lock), signed_time + 86400);
+    for ([_][]const []const u8{
+        &.{"mediaType"},                                                              &.{"verificationMaterial"},                  &.{"dsseEnvelope"},
+        &.{ "dsseEnvelope", "payload" },                                              &.{ "dsseEnvelope", "signatures" },          &.{ "dsseEnvelope", "signatures", "0", "sig" },
+        &.{ "verificationMaterial", "certificate", "rawBytes" },                      &.{ "verificationMaterial", "tlogEntries" }, &.{ "verificationMaterial", "tlogEntries", "0", "integratedTime" },
+        &.{ "verificationMaterial", "tlogEntries", "0", "inclusionProof", "hashes" },
+    }) |path| {
+        try rejected(a, try change(a, bytes, path, .null), policy(lock), &assets(lock), signed_time + 86400);
+        try rejected(a, try change(a, bytes, path, .{ .integer = 123 }), policy(lock), &assets(lock), signed_time + 86400);
+    }
 }

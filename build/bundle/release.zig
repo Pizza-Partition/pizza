@@ -36,7 +36,7 @@ fn hex(value: []const u8, size: usize) bool {
 }
 
 pub fn readLock(a: std.mem.Allocator, io: std.Io, path: []const u8) !Lock {
-    const lock = try files.readJson(Lock, a, io, path);
+    const lock = try std.json.parseFromSliceLeaky(Lock, a, try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(1024 * 1024)), .{ .ignore_unknown_fields = true });
     try lock.validate();
     return lock;
 }
@@ -68,19 +68,19 @@ pub const Base = struct {
 pub fn verify(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, root: []const u8, lock: Lock) !Base {
     try lock.validate();
     _ = env;
-    try verifyDigest(a, io, try files.join(a, &.{ root, lock.asset }), lock.sha256);
-    try verifyDigest(a, io, try files.join(a, &.{ root, lock.kernel_asset }), lock.kernel_sha256);
-    try verifyDigest(a, io, try files.join(a, &.{ root, lock.metadata_asset }), lock.metadata_sha256);
+    try verifyDigest(a, io, try std.fs.path.join(a, &.{ root, lock.asset }), lock.sha256);
+    try verifyDigest(a, io, try std.fs.path.join(a, &.{ root, lock.kernel_asset }), lock.kernel_sha256);
+    try verifyDigest(a, io, try std.fs.path.join(a, &.{ root, lock.metadata_asset }), lock.metadata_sha256);
     const now = std.Io.Clock.real.now(io).toSeconds();
     if (now < 0) return error.InvalidClock;
-    try @import("sigstore.zig").verify(a, try std.Io.Dir.cwd().readFileAlloc(io, try files.join(a, &.{ root, "attestation.json" }), a, .limited(1024 * 1024)), .{
+    try @import("sigstore.zig").verify(a, try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(a, &.{ root, "attestation.json" }), a, .limited(1024 * 1024)), .{
         .repository = lock.repository,
         .repository_id = lock.repository_id,
         .workflow = lock.workflow,
         .tag = lock.tag,
         .commit = lock.commit,
     }, &.{ .{ lock.asset, lock.sha256 }, .{ lock.kernel_asset, lock.kernel_sha256 }, .{ lock.metadata_asset, lock.metadata_sha256 } }, @intCast(now));
-    const base = try files.readJson(Base, a, io, try files.join(a, &.{ root, lock.metadata_asset }));
+    const base = try std.json.parseFromSliceLeaky(Base, a, try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(a, &.{ root, lock.metadata_asset }), a, .limited(1024 * 1024)), .{ .ignore_unknown_fields = true });
     try base.validate();
     return base;
 }
@@ -90,8 +90,8 @@ pub fn fetch(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, lo
     const output = try files.Output.init(a, io, destination, true);
     defer output.deinit(io);
     for ([_][]const u8{ lock.asset, lock.kernel_asset, lock.metadata_asset, "attestation.json" }) |name| {
-        try utils.process.runInherited(io, env, &.{ "curl", "--fail", "--location", "--silent", "--show-error", "--retry", "3", "--output", try files.join(a, &.{ output.temporary, name }), try a.print("https://github.com/{s}/releases/download/{s}/{s}", .{ repository, lock.tag, name }) });
+        try utils.process.runInherited(io, env, &.{ "curl", "--fail", "--location", "--silent", "--show-error", "--retry", "3", "--output", try std.fs.path.join(a, &.{ output.temporary, name }), try a.print("https://github.com/{s}/releases/download/{s}/{s}", .{ repository, lock.tag, name }) });
     }
     _ = try verify(a, io, env, output.temporary, lock);
-    try output.publish(io, output.temporary);
+    try std.Io.Dir.cwd().renamePreserve(output.temporary, .cwd(), output.target, io);
 }

@@ -17,11 +17,11 @@ pub const Key = struct {
         var seq = (try Der.one(spki, 0x30)).data;
         const algo = try Der.take(&seq, 0x30);
         const bit = try Der.take(&seq, 3);
-        try e.require(seq.len == 0 and bit.data.len > 1 and bit.data[0] == 0);
-        try e.require(std.mem.startsWith(u8, algo.data, ec_algorithm));
+        if (seq.len != 0 or bit.data.len <= 1 or bit.data[0] != 0) return error.InvalidAttestation;
+        if (!std.mem.startsWith(u8, algo.data, ec_algorithm)) return error.InvalidAttestation;
         const curve = algo.data[ec_algorithm.len..];
-        if (e.equal(curve, p256_oid) and bit.data.len == 66) return .{ .bytes = bit.data[1..], .curve = .p256 };
-        if (e.equal(curve, p384_oid) and bit.data.len == 98) return .{ .bytes = bit.data[1..], .curve = .p384 };
+        if (std.mem.eql(u8, curve, p256_oid) and bit.data.len == 66) return .{ .bytes = bit.data[1..], .curve = .p256 };
+        if (std.mem.eql(u8, curve, p384_oid) and bit.data.len == 98) return .{ .bytes = bit.data[1..], .curve = .p384 };
         return error.UnsupportedSignatureAlgorithm;
     }
     pub fn verify(key: Key, signature: []const u8, message: []const u8) !void {
@@ -48,31 +48,31 @@ pub const Certificate = struct {
         const tbs = try Der.take(&top, 0x30);
         const algorithm = try Der.take(&top, 0x30);
         const signature = try Der.take(&top, 3);
-        try e.require(top.len == 0 and signature.data.len > 1 and signature.data[0] == 0);
+        if (top.len != 0 or signature.data.len <= 1 or signature.data[0] != 0) return error.InvalidAttestation;
         var body = tbs.data;
-        try e.require(e.equal((try Der.take(&body, 0xa0)).data, "\x02\x01\x02"));
+        if (!std.mem.eql(u8, (try Der.take(&body, 0xa0)).data, "\x02\x01\x02")) return error.InvalidAttestation;
         const serial = try Der.take(&body, 2);
-        try e.require(serial.data.len > 0 and serial.data.len <= 20 and serial.data[0] & 128 == 0);
+        if (serial.data.len == 0 or serial.data.len > 20 or serial.data[0] & 128 != 0) return error.InvalidAttestation;
         const inner_algorithm = try Der.take(&body, 0x30);
-        try e.require(e.equal(inner_algorithm.raw, algorithm.raw));
-        try e.require(e.equal(algorithm.raw, sha256_algo) or e.equal(algorithm.raw, sha384_algo));
+        if (!std.mem.eql(u8, inner_algorithm.raw, algorithm.raw)) return error.InvalidAttestation;
+        if (!std.mem.eql(u8, algorithm.raw, sha256_algo) and !std.mem.eql(u8, algorithm.raw, sha384_algo)) return error.InvalidAttestation;
         const issuer = try Der.take(&body, 0x30);
         var validity = (try Der.take(&body, 0x30)).data;
         const before = try Der.read(validity);
         validity = validity[before.raw.len..];
         const after = try Der.read(validity);
-        try e.require(after.raw.len == validity.len);
+        if (after.raw.len != validity.len) return error.InvalidAttestation;
         const subject = try Der.take(&body, 0x30);
         const spki = try Der.take(&body, 0x30);
         _ = try Key.parse(spki.raw);
         const wrapper = try Der.take(&body, 0xa3);
-        try e.require(body.len == 0);
+        if (body.len != 0) return error.InvalidAttestation;
         return .{ .raw = raw, .tbs = tbs, .issuer = issuer.raw, .subject = subject.raw, .spki = spki.raw, .algorithm = algorithm.raw, .signature = signature.data[1..], .before = try e.certTime(before), .after = try e.certTime(after), .extensions = try Der.one(wrapper.data, 0x30), .extensions_wrapper = wrapper };
     }
     pub fn verify(cert: Certificate, issuer: Certificate, time: u64) !void {
-        try e.require(e.equal(cert.issuer, issuer.subject) and time >= cert.before and time <= cert.after);
+        if (!std.mem.eql(u8, cert.issuer, issuer.subject) or time < cert.before or time > cert.after) return error.InvalidAttestation;
         const key = try Key.parse(issuer.spki);
-        try e.require((key.curve == .p256 and e.equal(cert.algorithm, sha256_algo)) or (key.curve == .p384 and e.equal(cert.algorithm, sha384_algo)));
+        if ((key.curve == .p256 and !std.mem.eql(u8, cert.algorithm, sha256_algo)) or (key.curve == .p384 and !std.mem.eql(u8, cert.algorithm, sha384_algo))) return error.InvalidAttestation;
         try key.verify(cert.signature, cert.tbs.raw);
     }
     pub fn extension(cert: Certificate, wanted: []const u8) ![]const u8 {
@@ -80,7 +80,7 @@ pub const Certificate = struct {
         var found: ?[]const u8 = null;
         while (rest.len > 0) {
             const ext = try Extension.take(&rest);
-            if (e.equal(ext.oid, wanted)) {
+            if (std.mem.eql(u8, ext.oid, wanted)) {
                 if (found != null) return error.DuplicateExtension;
                 found = ext.data;
             }
@@ -90,7 +90,7 @@ pub const Certificate = struct {
     pub fn claim(cert: Certificate, id: u8, expected: []const u8) !void {
         const oid = "\x2b\x06\x01\x04\x01\x83\xbf\x30\x01" ++ [1]u8{id};
         const text = try Der.one(try cert.extension(oid), 0x0c);
-        if (!e.equal(text.data, expected)) return error.CertificateIdentityMismatch;
+        if (!std.mem.eql(u8, text.data, expected)) return error.CertificateIdentityMismatch;
     }
     pub fn leafUsage(cert: Certificate, a: std.mem.Allocator) !void {
         // Pin the supported Fulcio leaf profile. Unknown critical constraints fail closed.
@@ -101,12 +101,12 @@ pub const Certificate = struct {
             const ext = try Extension.take(&rest);
             const result = try seen.getOrPut(a, ext.oid);
             if (result.found_existing) return error.DuplicateExtension;
-            if (ext.critical and !e.equal(ext.oid, "\x55\x1d\x0f") and !e.equal(ext.oid, "\x55\x1d\x11") and !e.equal(ext.oid, "\x55\x1d\x13") and !e.equal(ext.oid, "\x55\x1d\x25")) return error.UnsupportedCriticalExtension;
+            if (ext.critical and !std.mem.eql(u8, ext.oid, "\x55\x1d\x0f") and !std.mem.eql(u8, ext.oid, "\x55\x1d\x11") and !std.mem.eql(u8, ext.oid, "\x55\x1d\x13") and !std.mem.eql(u8, ext.oid, "\x55\x1d\x25")) return error.UnsupportedCriticalExtension;
         }
-        try e.require(e.equal(try cert.extension("\x55\x1d\x0f"), "\x03\x02\x07\x80"));
-        try e.require(e.equal(try cert.extension("\x55\x1d\x25"), "\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x03"));
+        if (!std.mem.eql(u8, try cert.extension("\x55\x1d\x0f"), "\x03\x02\x07\x80")) return error.InvalidAttestation;
+        if (!std.mem.eql(u8, try cert.extension("\x55\x1d\x25"), "\x30\x0a\x06\x08\x2b\x06\x01\x05\x05\x07\x03\x03")) return error.InvalidAttestation;
         if (cert.extension("\x55\x1d\x13")) |constraints| {
-            try e.require(e.equal(constraints, "\x30\x00") or e.equal(constraints, "\x30\x03\x01\x01\x00"));
+            if (!std.mem.eql(u8, constraints, "\x30\x00") and !std.mem.eql(u8, constraints, "\x30\x03\x01\x01\x00")) return error.InvalidAttestation;
         } else |err| if (err != error.MissingCertificateExtension) return err;
     }
 };
@@ -122,11 +122,11 @@ pub const Extension = struct {
         var critical = false;
         if (body.len > 0 and body[0] == 1) {
             const flag = try Der.take(&body, 1);
-            try e.require(e.equal(flag.data, "\xff"));
+            if (!std.mem.eql(u8, flag.data, "\xff")) return error.InvalidAttestation;
             critical = true;
         }
         const data = try Der.take(&body, 4);
-        try e.require(body.len == 0);
+        if (body.len != 0) return error.InvalidAttestation;
         return .{ .raw = ext.raw, .oid = oid.data, .data = data.data, .critical = critical };
     }
 };

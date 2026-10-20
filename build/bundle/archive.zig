@@ -109,17 +109,17 @@ pub fn appendFile(io: std.Io, source: []const u8, output: []const u8) !void {
 }
 pub fn image(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, root: []const u8, destination: []const u8) !void {
     _ = try @import("root.zig").verify(a, io, root);
-    const lock = try release.readLock(a, io, try files.join(a, &.{ root, "release.json" }));
+    const lock = try release.readLock(a, io, try std.fs.path.join(a, &.{ root, "release.json" }));
     _ = try release.verify(a, io, env, root, lock);
     const output = try files.Output.init(a, io, destination, false);
     defer output.deinit(io);
     if (utils.filesystem.pathIsWithin(root, output.target)) return error.ImageMustBeOutsideSource;
-    const compressed = try files.join(a, &.{ output.temporary, "application.cpio.gz" });
-    try gzipLayer(a, io, try files.join(a, &.{ root, "overlay" }), compressed);
-    const combined = try files.join(a, &.{ output.temporary, "maint.img" });
-    try std.Io.Dir.cwd().copyFile(try files.join(a, &.{ root, lock.asset }), .cwd(), combined, io, .{});
+    const compressed = try std.fs.path.join(a, &.{ output.temporary, "application.cpio.gz" });
+    try gzipLayer(a, io, try std.fs.path.join(a, &.{ root, "overlay" }), compressed);
+    const combined = try std.fs.path.join(a, &.{ output.temporary, "maint.img" });
+    try std.Io.Dir.cwd().copyFile(try std.fs.path.join(a, &.{ root, lock.asset }), .cwd(), combined, io, .{});
     try appendFile(io, compressed, combined);
-    try output.publish(io, combined);
+    try std.Io.Dir.cwd().renamePreserve(combined, .cwd(), output.target, io);
 }
 pub fn pack(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, source: []const u8, destination: []const u8) !void {
     _ = env;
@@ -135,7 +135,7 @@ fn packTree(a: std.mem.Allocator, io: std.Io, root: []const u8, destination: []c
     const output = try files.Output.init(a, io, destination, false);
     defer output.deinit(io);
     if (utils.filesystem.pathIsWithin(root, output.target)) return error.BundleArchiveMustBeOutsideSource;
-    const archive_path = try files.join(a, &.{ output.temporary, "bundle.tar.gz" });
+    const archive_path = try std.fs.path.join(a, &.{ output.temporary, "bundle.tar.gz" });
     const file = try std.Io.Dir.cwd().createFile(io, archive_path, .{ .exclusive = true });
     defer file.close(io);
     var buffer: [64 * 1024]u8 = undefined;
@@ -171,5 +171,5 @@ fn packTree(a: std.mem.Allocator, io: std.Io, root: []const u8, destination: []c
     try compression.finish();
     try writer.interface.flush();
     try file.sync(io);
-    try output.publish(io, archive_path);
+    try std.Io.Dir.cwd().renamePreserve(archive_path, .cwd(), output.target, io);
 }

@@ -1,51 +1,5 @@
-//! Bounded DER and JSON decoding for the deliberately narrow Sigstore profile.
+//! Bounded DER decoding and certificate timestamps for the supported Sigstore profile.
 const std = @import("std");
-pub const Value = std.json.Value;
-pub fn equal(a: []const u8, b: []const u8) bool {
-    return std.mem.eql(u8, a, b);
-}
-pub fn require(ok: bool) !void {
-    if (!ok) return error.InvalidAttestation;
-}
-pub fn field(v: Value, name: []const u8) !Value {
-    if (v != .object) return error.InvalidAttestation;
-    return v.object.get(name) orelse error.InvalidAttestation;
-}
-pub fn string(v: Value) ![]const u8 {
-    if (v != .string) return error.InvalidAttestation;
-    return v.string;
-}
-pub fn text(v: Value, name: []const u8) ![]const u8 {
-    return string(try field(v, name));
-}
-pub fn array(v: Value) ![]Value {
-    if (v != .array) return error.InvalidAttestation;
-    return v.array.items;
-}
-pub fn number(v: Value) !u64 {
-    return std.fmt.parseInt(u64, try string(v), 10);
-}
-pub fn json(a: std.mem.Allocator, bytes: []const u8) !Value {
-    return std.json.parseFromSliceLeaky(Value, a, bytes, .{ .max_value_len = 1024 * 1024 });
-}
-pub fn decode(a: std.mem.Allocator, encoded: []const u8) ![]u8 {
-    const decoder = std.base64.standard.Decoder;
-    const bytes = try a.alloc(u8, try decoder.calcSizeForSlice(encoded));
-    try decoder.decode(bytes, encoded);
-    return bytes;
-}
-pub fn encode(a: std.mem.Allocator, bytes: []const u8) ![]const u8 {
-    const encoder = std.base64.standard.Encoder;
-    return encoder.encode(try a.alloc(u8, encoder.calcSize(bytes.len)), bytes);
-}
-pub fn hash(bytes: []const u8) [32]u8 {
-    var out: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(bytes, &out, .{});
-    return out;
-}
-pub fn digest(bytes: []const u8) [64]u8 {
-    return std.fmt.bytesToHex(hash(bytes), .lower);
-}
 pub const Der = struct {
     tag: u8,
     raw: []const u8,
@@ -97,18 +51,11 @@ pub fn timestamp(bytes: []const u8) !u64 {
     };
     if (n != 14) return error.InvalidTimestamp;
     content[14] = 'Z';
-    return certTime(tryDerTime(&content));
-}
-fn tryDerTime(data: []const u8) Der {
-    return .{ .tag = 0x18, .raw = data, .data = data };
+    return certTime(.{ .tag = 0x18, .raw = &content, .data = &content });
 }
 pub fn certTime(v: Der) !u64 {
     if ((v.tag != 0x17 or v.data.len != 13) and (v.tag != 0x18 or v.data.len != 15)) return error.InvalidTimestamp;
     if (v.data[v.data.len - 1] != 'Z') return error.InvalidTimestamp;
     for (v.data[0 .. v.data.len - 1]) |b| if (!std.ascii.isDigit(b)) return error.InvalidTimestamp;
     return std.crypto.Certificate.parseTime(.{ .buffer = v.data, .index = 0 }, .{ .identifier = @bitCast(v.tag), .slice = .{ .start = 0, .end = @intCast(v.data.len) } });
-}
-pub fn validAt(v: Value, time: u64) !void {
-    try require(time >= try timestamp(try text(v, "start")));
-    if (v.object.get("end")) |end| try require(time <= try timestamp(try string(end)));
 }
