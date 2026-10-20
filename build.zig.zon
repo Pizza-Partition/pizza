@@ -2,7 +2,7 @@
     .name = .pizza_transition,
     .version = "0.1.0",
     .fingerprint = 0xf34c1f157b9ef8cb,
-    .minimum_zig_version = "0.18.0-dev.146+35accc06e",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .clap = .{
             .url = "git+https://github.com/Hejsil/zig-clap#05faf3905e8548f5cc269a8836e154065e70128d",

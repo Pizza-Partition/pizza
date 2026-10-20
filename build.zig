@@ -1,9 +1,16 @@
 const std = @import("std");
 const bundle_steps = @import("build/bundle.zig");
+comptime {
+    const required = std.mem.trim(u8, @embedFile(".zigversion"), " \t\r\n");
+    if (!std.mem.eql(u8, @import("builtin").zig_version_string, required))
+        @compileError("Pizza requires Zig " ++ required ++ "; current compiler is " ++ @import("builtin").zig_version_string ++ ". Select the compiler pinned in .zigversion and config/toolchain.json.");
+}
 
 /// Registers core binaries, engineering commands, format checks and test suites.
 /// Host tools use the baseline Linux target; core binaries use the selected build target.
 pub fn build(b: *std.Build) void {
+    // Formatting, doctor and test subprocesses must use the compiler running this build.
+    b.graph.environ_map.put("ZIG", b.graph.zig_exe) catch @panic("OOM");
     const npm = requireHostTool(b, "NPM", "npm");
     _ = requireHostTool(b, "NODE", "node");
     // TODO: Support for other OSes.

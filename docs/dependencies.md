@@ -38,7 +38,7 @@ Rekor SET、Merkle inclusion proof 和签名 checkpoint，并将日志绑定到�
 Zig 工具链的 XZ 解包使用 `std.compress.xz`。流式打包不把整个基础镜像读进内存，
 归档条目排序，mtime/uid/gid 归零，保留普通文件权限与相对符号链接。newc 写入器由应用层和 console 层共享。
 工具解包拒绝路径穿越、绝对链接、逃逸链接及符号链接父目录；gzip 解包显式验证 CRC 和原始长度。
-固定 nightly 的 XZ 解码器尚未实现数据块校验和，因此只解码已经过完整 SHA-256 锁验证的官方工具链；
+固定 Zig 版本的 XZ 解码器尚未实现数据块校验和，因此只解码已经过完整 SHA-256 锁验证的官方工具链；
 它还按块分配内存，XZ 引导并非固定内存流式解压。
 CI 首次安装 Zig 时尚无编译器，仍用 runner 自带 tar 解包；获得 Zig 后的消费端归档与压缩均不调用外部命令。
 

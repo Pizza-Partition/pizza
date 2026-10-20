@@ -1,7 +1,7 @@
 # Pizza transition
 
 按 [启动切换 spec](docs/superpowers/specs/2026-10-13-pizza-transition-design.md)
-建立的工程与测试基础设施。使用 **Zig 0.18.0-dev.146+35accc06e**。
+建立的工程与测试基础设施。使用 **Zig 0.17.0**。
 默认目标是 x86-64 基线、Linux 4.18；PID 1 与宿主工具静态构建；普通维护应用动态链接 glibc，并在运行时加载 WPE。
 
 第三方运行环境由独立仓库 [pizza-bundle](https://github.com/Pizza-Partition/pizza-bundle)
@@ -40,8 +40,18 @@ journal 夹具。`zig build test-bridge` 在具备 WPE 的宿主运行真实 pan
 也可用 `test-maintenance -- --bridge` 在 RAM 维护镜像内验证完整闭包。
 
 `zig build bootstrap-zig -- --destination /tmp/pizza-toolchains` 下载 SHA-256
-固定的官方 nightly；该入口需要已有可编译本项目的 Zig。CI 的首次引导使用已有
-Node 下载并校验同一锁文件。开发环境应使用 `config/toolchain.json` 指定的版本。
+固定的官方正式版；该入口需要已有可编译本项目的 Zig。CI 的首次引导使用已有
+Node 下载并校验同一锁文件。开发环境应使用 `config/toolchain.json` 指定的版本。版本不符会在构建前明确报错。
+已有 `zig-out/bin/pizza-tools` 时，可直接用它引导锁定版本，然后选择该编译器：
+
+```sh
+zig-out/bin/pizza-tools bootstrap-zig --destination /tmp/pizza-toolchains
+export PATH="/tmp/pizza-toolchains/zig-x86_64-linux-0.17.0:$PATH"
+zig version # 0.17.0
+zig build all
+```
+
+构建会把实际使用的编译器传给子进程，不要求额外设置 `ZIG`。
 `-Doptimize` 可选 `debug`、`safe`、`fast`、`small`。
 
 工程分工：
@@ -101,7 +111,7 @@ kexec 切换与独立 ext4 journal 设备的生产交接已接入，使用方法
 参考用户指定的 [zigcc/skills](https://github.com/zigcc/skills)：
 [0.17 API 指南](https://github.com/zigcc/skills/blob/main/zig-0-17/SKILL.md)
 与 [TigerStyle](https://github.com/zigcc/skills/blob/main/zig-tiger-style/SKILL.md)。
-0.18 的实际 API 以锁定工具链的本地标准库源码和编译结果为准。
+0.17 的实际 API 以锁定工具链的本地标准库源码和编译结果为准。
 
 格式化统一入口为 `zig build fmt`；`zig build fmt-check` 只检查，并用于 CI。
 Zig 和 ZON 直接使用官方 `zig fmt`；JSON、JS/TS、HTML、CSS、YAML、Markdown 使用锁定版本的

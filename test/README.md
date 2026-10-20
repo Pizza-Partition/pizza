@@ -4,7 +4,7 @@
 
 # Transition test infrastructure
 
-The tooling and test runners are Zig programs built with the pinned 0.18 nightly.
+The tooling and test runners are Zig programs built with the pinned 0.17.0 release.
 Run `zig build deps` to install locked frontend dependencies. `zig build test`
 runs core tests, runtime contract and consumption tests, initramfs tests, native integration tests, and npm frontend tests.
 `zig build fmt-check` is the CI formatting gate; Zig and ZON use the official `zig fmt`.

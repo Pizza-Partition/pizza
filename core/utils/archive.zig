@@ -6,7 +6,7 @@ pub const Compression = enum { gzip, xz };
 /// `source` must be authenticated before this function is called. In this pinned
 /// Zig revision XZ data checksums are not implemented; the caller's SHA-256 pin
 /// authenticates the complete compressed stream. Decode to a file so TAR never
-/// calls the nightly XZ reader's unimplemented discard operation.
+/// calls this XZ reader's unimplemented discard operation.
 pub fn extract(a: std.mem.Allocator, io: std.Io, source: []const u8, destination: []const u8, compression: Compression, required_root: ?[]const u8) !void {
     const temporary = try filesystem.createTemporaryDirectory(a, io, "pizza-unpack-");
     defer std.Io.Dir.cwd().deleteTree(io, temporary) catch {};
