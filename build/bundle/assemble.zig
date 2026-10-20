@@ -1,0 +1,49 @@
+//! Add Pizza's own program and frontend without unpacking the authenticated base.
+const std = @import("std");
+const utils = @import("utils");
+const files = @import("files.zig");
+const release = @import("release.zig");
+pub const Options = struct {
+    runtime: []const u8,
+    init: []const u8,
+    maintenance: []const u8,
+    panel: []const u8,
+    destination: []const u8,
+    patchelf: []const u8,
+    lock: []const u8 = release.lock_path,
+};
+
+pub fn assemble(a: std.mem.Allocator, io: std.Io, env: *std.process.Environ.Map, options: Options) !void {
+    const lock = try release.readLock(a, io, options.lock);
+    const version = try utils.process.checkedOutput(a, io, env, &.{ options.patchelf, "--version" });
+    if (!std.mem.eql(u8, std.mem.trim(u8, version, " \r\n\t"), "patchelf 0.19.2")) return error.UnsupportedPatchelfVersion;
+    const base = try release.verify(a, io, env, options.runtime, lock);
+    const output = try files.Output.init(a, io, options.destination, true);
+    defer output.deinit(io);
+    const root = output.temporary;
+    for ([_][]const u8{ lock.asset, lock.kernel_asset, lock.metadata_asset, "attestation.json" }) |name|
+        try std.Io.Dir.cwd().copyFile(try files.join(a, &.{ options.runtime, name }), .cwd(), try files.join(a, &.{ root, name }), io, .{});
+    try std.Io.Dir.cwd().copyFile(options.lock, .cwd(), try files.join(a, &.{ root, "release.json" }), io, .{});
+    const overlay = try files.join(a, &.{ root, "overlay" });
+    const application = try files.join(a, &.{ overlay, "opt/pizza/bundle/bin/pizza-maint" });
+    try std.Io.Dir.cwd().createDirPath(io, std.fs.path.dirname(application).?);
+    try std.Io.Dir.cwd().copyFile(options.init, .cwd(), try files.join(a, &.{ overlay, "init" }), io, .{ .permissions = .fromMode(0o755) });
+    try std.Io.Dir.cwd().copyFile(options.maintenance, .cwd(), application, io, .{ .permissions = .fromMode(0o755) });
+    try utils.process.runInherited(io, env, &.{ options.patchelf, "--set-interpreter", "lib/ld-linux-x86-64.so.2", "--set-rpath", "$ORIGIN/../lib", application });
+    const panel = try files.join(a, &.{ overlay, "opt/pizza/bundle/share/panel" });
+    try std.Io.Dir.cwd().createDirPath(io, std.fs.path.dirname(panel).?);
+    try utils.process.runInherited(io, env, &.{ "cp", "-aL", "--", options.panel, panel });
+    try std.Io.Dir.cwd().symLink(io, "bundle/share/panel", try files.join(a, &.{ overlay, "opt/pizza/panel" }), .{});
+    try files.writeJson(a, io, try files.join(a, &.{ root, "manifest.json" }), .{
+        .format = @as(u16, 3),
+        .kind = "pizza-application",
+        .architecture = "x86_64",
+        .profile = "wpe-platform-v2",
+        .working_directory = "bundle-root",
+        .layout = "base-plus-overlay",
+        .kernel = .{ .version = base.kernel_version, .release = base.kernel_release, .image = "vmlinuz" },
+        .components = .{ .@"pizza-init" = "overlay/init", .@"pizza-maint" = "overlay/opt/pizza/bundle/bin/pizza-maint", .@"panel-assets" = "overlay/opt/pizza/bundle/share/panel/index.html" },
+        .provenance = .{ .repository = release.repository, .tag = lock.tag, .commit = lock.commit, .sha256 = lock.sha256 },
+    });
+    try output.publish(io, root);
+}

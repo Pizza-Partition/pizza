@@ -13,7 +13,7 @@ pacman 负责签名验证、递归依赖解析与安装，patchelf 负责解释�
 
 ## 消费固定发布版本
 
-宿主需要锁定的 Zig、Node >=22、npm、GitHub CLI（支持 `gh attestation verify`）、
+宿主需要锁定的 Zig、Node >=22、npm、curl、
 GNU cpio/gzip 和 GNU tar（测试另需 libarchive 的 bsdtar）。前端格式检查另需 clang-format。构建自动下载官方 patchelf 0.19.2 二进制并验证 `config/patchelf.json` 中的 SHA-256；已复现 Ubuntu 24.04 自带 0.18 会破坏当前 Zig ELF 布局，禁止用于应用组装。
 
 ```sh
@@ -24,15 +24,20 @@ zig build all test
 ```
 
 `config/bundle/release.json` 固定仓库 ID、发布 tag、源 commit，以及基础 initramfs、内核、base.json 的文件名和 SHA-256。
-`tools/runtime.mjs` 先检查归档摘要，再用 GitHub CLI 验证 attestation 的仓库、
-发布 workflow、tag、source commit、signer commit 和 GitHub 托管 runner。
+`build/bundle/release.zig` 流式校验 SHA-256，再调用 `build/bundle/sigstore.zig` 离线验签。
+ECDSA 签名通过 `std.crypto.sign` 验证；同时验证内置 Fulcio 信任链、证书用途、SCT、
+Rekor SET、Merkle inclusion proof 和签名 checkpoint，并将日志绑定到证书、签名和 payload。
+签名证书中的仓库 ID、发布 workflow、tag、source commit、signer commit 和 GitHub 托管 runner 必须匹配锁文件；
+签名的 in-toto subject 必须包含三个原始产物的摘要。信任根版本及支持格式见 [信任策略](../build/bundle/trust/README.md)。
+信任根更新需提交代码审核，不信任随包携带的自定义根；未支持的格式或算法直接拒绝。
 验证通过后将原始基础层复制到新目录；不解包或改写基础层。失败会清理临时目录。
-签名验证发生在宿主构建阶段，RAM 维护环境无需 GitHub CLI、网络或 Sigstore 客户端。
+签名验证发生在宿主构建阶段，不依赖 GitHub CLI、OpenSSL 或外部 Sigstore 客户端；
+下载结束后验签无需网络。RAM 维护环境仍使用已有的镜像摘要校验，并未增加运行时来源验证。
 没有跳过验证的生产选项。
 
 ```sh
-node tools/runtime.mjs fetch --destination /tmp/pizza-runtime
-node tools/bootstrap-patchelf.mjs /tmp/pizza-patchelf
+zig build tools -- fetch-bundle --destination /tmp/pizza-runtime
+zig build tools -- bootstrap-patchelf --destination /tmp/pizza-patchelf
 zig build tools -- verify-bundle --bundle /tmp/pizza-runtime
 zig build tools -- prepare-bundle \
   --runtime /tmp/pizza-runtime --patchelf /tmp/pizza-patchelf/bin/patchelf \
@@ -89,3 +94,7 @@ overlay/
 最终 `maint.img = 基础 initramfs + gzip/newc 应用层 + console 层`。
 驱动、固件和系统布局调整都在 pizza-bundle 中发布；Pizza 不再调用 dracut、depmod 或 modprobe。
 基础层本身没有 `/init`，不单独宣称可启动。生产者追加测试 init 验收基础层；消费者追加真实程序后做真实 WPE 启动验收。
+
+`build/bundle.zig` 用 `b.addRunArtifact` 接入上述 Zig 工具步骤。`release.zig` 负责来源策略，
+`assemble.zig` 负责应用层，`archive.zig` 调用标准归档工具，`tool.zig` 校验并安装构建工具。
+已移除 Node bundle 脚本；Node/npm 仍用于前端、格式检查及 CI 首次引导 Zig。

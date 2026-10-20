@@ -1,7 +1,7 @@
 const std = @import("std");
 const clap = @import("clap");
 
-const utils = @import("utils");
+const bundle_build = @import("bundle_build");
 
 const params = clap.parseParamsComptime(
     \\-h, --help  Display this help and exit.
@@ -45,5 +45,5 @@ pub fn run(
     const maintenance = parsed.args.maintenance orelse return error.MissingMaintenanceBinary;
     const panel = parsed.args.panel orelse return error.MissingPanelAssets;
     const destination = parsed.args.destination orelse return error.MissingDestination;
-    try utils.process.runInherited(io, environ, &.{ "node", "tools/runtime.mjs", "assemble", "--runtime", runtime, "--init", init_binary, "--maintenance", maintenance, "--panel", panel, "--destination", destination, "--patchelf", parsed.args.patchelf orelse "patchelf" });
+    try bundle_build.assemble(allocator, io, environ, .{ .runtime = runtime, .init = init_binary, .maintenance = maintenance, .panel = panel, .destination = destination, .patchelf = parsed.args.patchelf orelse "patchelf" });
 }

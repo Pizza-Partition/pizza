@@ -1,7 +1,7 @@
 const std = @import("std");
 const clap = @import("clap");
 
-const utils = @import("utils");
+const bundle_build = @import("bundle_build");
 const params = clap.parseParamsComptime(
     \\-h, --help  Display this help and exit.
     \\--bundle <str>  Release download directory containing base image, kernel, metadata and attestation (required).
@@ -32,5 +32,6 @@ pub fn run(
         return clap.helpToFile(io, .stdout(), clap.Help, &params, .{});
     }
     const runtime = parsed.args.bundle orelse return error.MissingBundle;
-    try utils.process.runInherited(io, environ, &.{ "node", "tools/runtime.mjs", "verify", "--runtime", runtime });
+    const lock = try bundle_build.release.readLock(allocator, io, bundle_build.release.lock_path);
+    _ = try bundle_build.release.verify(allocator, io, environ, runtime, lock);
 }

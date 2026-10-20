@@ -2,17 +2,17 @@
 const std = @import("std");
 
 pub fn add(b: *std.Build, tool: *std.Build.Step.Compile, init_binary: *std.Build.Step.Compile, maintenance: *std.Build.Step.Compile, panel: *std.Build.Step.Run) *std.Build.Step {
-    const fetch = b.addSystemCommand(&.{ "node", "tools/runtime.mjs", "fetch", "--lock" });
+    const fetch = b.addRunArtifact(tool);
+    fetch.addArgs(&.{ "fetch-bundle", "--lock" });
     fetch.setCwd(b.path("."));
     fetch.addFileArg(b.path("config/bundle/release.json"));
-    fetch.addFileInput(b.path("tools/runtime.mjs"));
     fetch.addArg("--destination");
     const runtime = fetch.addOutputDirectoryArg2("runtime", .{});
     const runtime_step = b.step("runtime-deps", "Download and verify the pinned pizza-bundle release");
     runtime_step.dependOn(&fetch.step);
-    const bootstrap = b.addSystemCommand(&.{ "node", "tools/bootstrap-patchelf.mjs" });
+    const bootstrap = b.addRunArtifact(tool);
+    bootstrap.addArgs(&.{ "bootstrap-patchelf", "--destination" });
     bootstrap.setCwd(b.path("."));
-    bootstrap.addFileInput(b.path("tools/bootstrap-patchelf.mjs"));
     bootstrap.addFileInput(b.path("config/patchelf.json"));
     const patch_tool = bootstrap.addOutputDirectoryArg2("patchelf", .{});
     const prepare = b.addRunArtifact(tool);
@@ -29,7 +29,6 @@ pub fn add(b: *std.Build, tool: *std.Build.Step.Compile, init_binary: *std.Build
     prepare.addDirectoryArg2(b.path("ui/execution/gui/dist"), .{});
     prepare.addArg("--destination");
     const directory = prepare.addOutputDirectoryArg2("bundle", .{});
-    prepare.addFileInput(b.path("tools/runtime.mjs"));
     prepare.addFileInput(b.path("config/bundle/release.json"));
     prepare.step.dependOn(&panel.step);
     const pack = b.addRunArtifact(tool);

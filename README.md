@@ -7,7 +7,7 @@
 第三方运行环境由独立仓库 [pizza-bundle](https://github.com/Pizza-Partition/pizza-bundle)
 通过 pacman 与 patchelf 构建，隔离测试通过后发布 GitHub Release 和 Sigstore attestation。
 本仓库通过 `config/bundle/release.json` 固定归档摘要、仓库 ID、tag 与 commit，使用
-GitHub CLI 验证发布 workflow 与来源，然后向基础 initramfs 追加当前构建的程序和界面。
+Zig 原生 Sigstore 验证发布 workflow 与来源，然后向基础 initramfs 追加当前构建的程序和界面。
 内核固定为 Linux 7.2.11（7.2.11-arch1-1），同时携带匹配模块；镜像构建不依赖宿主安装同版本内核。
 无需安装宿主 WPE；依赖包管理、ELF 重定位和运行环境审计都属于 pizza-bundle。
 
@@ -30,8 +30,9 @@ zig build -Doptimize=safe
 `zig build all` 构建核心程序、前端和完整 bundle；普通 `zig build` 安装核心程序与工程工具。
 协议生成、bundle 校验、镜像打包和 VM 测试均使用 Zig，命令行参数使用锁定的 `zig-clap`。
 `zig build tools -- COMMAND [ARGS]` 可直接运行工具命令；安装后的入口为
-`zig-out/bin/pizza-tools`。核心工具使用 Zig；发布产物下载、attestation 验证和组装由 Node 调用 GitHub CLI、
-patchelf 与 GNU tar/cpio 完成。
+`zig-out/bin/pizza-tools`。发布产物下载、摘要与来源策略、应用组装均由 `build/bundle/` 中的 Zig 实现，
+通过 `build.zig` 的原生构建步骤接入。签名验证使用 `std.crypto.sign`，包括 Fulcio 证书链、DSSE、Rekor 日志与 SCT；
+信任根固定内置，验签离线完成，不需要 GitHub CLI。下载使用 curl，ELF 与归档操作调用 patchelf、GNU tar/cpio/gzip。
 
 测试入口位于 `test/main.zig`，由 `zig build test-smoke`、`test-maintenance`、
 `test-journal`、`test-matrix` 分别运行。`zig build test-runners` 安装可选宿主测试入口与

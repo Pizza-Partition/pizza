@@ -1,5 +1,5 @@
 const std = @import("std");
-const utils = @import("utils");
+const bundle_build = @import("bundle_build");
 const clap = @import("clap");
 
 const params = clap.parseParamsComptime(
@@ -35,5 +35,5 @@ pub fn run(
     }
     const root = parsed.args.bundle orelse return error.MissingBundle;
     const output = parsed.args.output orelse return error.MissingOutput;
-    try utils.process.runInherited(io, environ, &.{ "node", "tools/runtime.mjs", "pack", "--bundle", root, "--output", output });
+    try bundle_build.pack(allocator, io, environ, root, output);
 }

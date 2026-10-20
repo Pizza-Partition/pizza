@@ -7,6 +7,8 @@ const Command = enum {
     proto,
     fmt,
     doctor,
+    @"fetch-bundle",
+    @"bootstrap-patchelf",
     @"verify-bundle",
     @"prepare-bundle",
     @"pack-bundle",
@@ -17,7 +19,7 @@ const Command = enum {
 const parsers = .{ .command = clap.parsers.enumeration(Command) };
 const params = clap.parseParamsComptime(
     \\-h, --help  Display this help and exit.
-    \\<command>  proto, fmt, doctor, verify-bundle, prepare-bundle, pack-bundle, image, bootstrap-zig, clean.
+    \\<command>  proto, fmt, doctor, fetch-bundle, bootstrap-patchelf, verify-bundle, prepare-bundle, pack-bundle, image, bootstrap-zig, clean.
 );
 
 /// Dispatches engineering commands and translates argument or command failures into exit status 1.
@@ -73,6 +75,8 @@ fn dispatch(
         .proto => try @import("protocol.zig").generate(allocator, io, environ, argv),
         .fmt => try @import("format.zig").run(allocator, io, environ, argv),
         .doctor => try @import("doctor.zig").run(allocator, io, environ, argv),
+        .@"fetch-bundle" => try @import("fetch_bundle.zig").run(allocator, io, environ, false, argv),
+        .@"bootstrap-patchelf" => try @import("fetch_bundle.zig").run(allocator, io, environ, true, argv),
         .@"verify-bundle" => try @import("verify_bundle.zig").run(allocator, io, environ, argv),
         .@"prepare-bundle" => try @import(
             "prepare.zig",

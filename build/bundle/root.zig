@@ -22,3 +22,14 @@ pub fn verify(allocator: std.mem.Allocator, io: std.Io, root: []const u8) !Verif
     }
     return .{ .manifest = meta };
 }
+
+pub const release = @import("release.zig");
+pub const assemble = @import("assemble.zig").assemble;
+pub const AssembleOptions = @import("assemble.zig").Options;
+pub const pack = @import("archive.zig").pack;
+pub const image = @import("archive.zig").image;
+pub const bootstrapPatchelf = @import("tool.zig").bootstrap;
+
+test {
+    std.testing.refAllDecls(@import("tests.zig"));
+}

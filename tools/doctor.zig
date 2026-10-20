@@ -39,8 +39,7 @@ pub fn run(
         "qemu-system-x86_64",
         "qemu-img",
     } else if (std.mem.eql(u8, profile, "image")) &.{
-        "node",
-        "gh",
+        "curl",
         "cpio",
         "gzip",
         "tar",

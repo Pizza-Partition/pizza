@@ -492,8 +492,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_integration.step);
     const frontend_tests = b.addSystemCommand(&.{ npm, "--prefix", "ui", "test" });
     test_step.dependOn(&frontend_tests.step);
-    const runtime_tests = b.addSystemCommand(&.{ "node", "--test", "tools/runtime.test.mjs" });
-    test_step.dependOn(&runtime_tests.step);
 
     const generate = command(b, tool, &.{"proto"});
     b.step("proto", "Regenerate protocol bindings").dependOn(&generate.step);

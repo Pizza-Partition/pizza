@@ -13,7 +13,7 @@ Feasibility experiments and VM fixtures belong outside the checkout.
 
 Host test commands are dispatched by `main.zig`, separately from `tools/main.zig`.
 Both use the locked `zig-clap` dependency for option parsing and generated help.
-Attested release consumption lives in `../build/bundle/` and `../tools/runtime.mjs`;
+Attested release consumption is implemented natively in `../build/bundle/`;
 minimal runtime path checks live in `../core/bundle/`.
 Initramfs logic lives in `../core/initramfs/`. Generic file, process and JSON helpers live in `../core/utils/`; functions take their required
 allocator, I/O and environment parameters explicitly. Runtime logs use `std.log`.
@@ -27,8 +27,13 @@ test artifacts explicitly, so these helpers do not need public visibility.
 Module unit tests live beside their implementations. `integration/` exercises
 executable behavior and runtime path confinement.
 
-Runtime trust-policy tests live in `../tools/runtime.test.mjs`: they check pinned
-source/workflow/ref verification and reject modified archives before extraction.
+Runtime trust-policy and archive integration tests live in `../build/bundle/tests.zig`
+and run through `zig build test`: they check pinned source/workflow/ref verification,
+authenticate the real published v0.3.1 fixture with native cryptography, reject modified assets,
+signatures, certificates, log bodies, SETs, Merkle proofs and checkpoints, and reject
+wrong publisher/workflow/tag/commit and artifact digests. They also preserve opaque base
+bytes, round-trip the application layer and reject every truncated certificate.
+These tests need no GitHub CLI, credentials or network.
 `integration/bundle.zig` checks path confinement. Upstream archive construction,
 loader checks and actual WPE smoke tests belong to pizza-bundle's publishing CI.
 

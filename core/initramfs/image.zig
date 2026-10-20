@@ -32,13 +32,10 @@ pub fn build(
     if (release != .string or !std.mem.eql(u8, release.string, "7.2.11-arch1-1")) return error.KernelModulesVersionMismatch;
     if (options.kernel_version) |selected| if (!std.mem.eql(u8, selected, release.string)) return error.KernelModulesVersionMismatch;
     const command = try allocator.dupe([]const u8, &.{
-        "node",  try std.fs.path.join(allocator, &.{ checkout_root, "tools/runtime.mjs" }),
-        "image", "--bundle",
-        root,    "--output",
-        output,
+        "pizza-tools", "image", "--bundle", root, "--output", output,
     });
     if (options.dry_run) return command;
-    try utils.process.runInherited(io, environ, command);
+    try bundle_build.image(allocator, io, environ, root, output);
     const image = try std.Io.Dir.cwd().openFile(io, output, .{ .mode = .read_write });
     defer image.close(io);
     // Preserve the existing unprivileged /dev/console archive helper.
