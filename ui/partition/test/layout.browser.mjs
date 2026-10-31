@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-const {contract}=await import(new URL('../../../zig-out/share/pizza/protocol/contract.js',import.meta.url));
-const PROTOCOL_VERSION=contract['x-pizza'].version;
+const {CONTRACT}=await import(new URL('../../../zig-out/share/pizza/protocol/contract.js',import.meta.url));
+const PROTOCOL_VERSION=CONTRACT['x-pizza'].version;
 const { chromium } = await import(process.env.PIZZA_PLAYWRIGHT_MODULE || 'playwright-core');
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const SIZES = [

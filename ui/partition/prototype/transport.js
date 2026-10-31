@@ -1,5 +1,5 @@
-import {contract} from './protocol/contract.js';
-export const PROTOCOL_VERSION=contract['x-pizza'].version;
+import {CONTRACT} from './protocol/contract.js';
+export const PROTOCOL_VERSION=CONTRACT['x-pizza'].version;
 async function callNative(binding, ...args) {
   const bridge=globalThis.webui;
   if (!bridge) throw Error('Open Pizza using pizza (`zig build run`).');

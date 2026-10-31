@@ -2,8 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {ExecutionMonitor} from '../prototype/execution-client.js';
 const id='a'.repeat(64);
-const {contract}=await import(new URL('../../../zig-out/share/pizza/protocol/contract.js',import.meta.url));
-const PROTOCOL_VERSION=contract['x-pizza'].version;
+const {CONTRACT}=await import(new URL('../../../zig-out/share/pizza/protocol/contract.js',import.meta.url));
+const PROTOCOL_VERSION=CONTRACT['x-pizza'].version;
 const run=(status='running',completed=0)=>({version:PROTOCOL_VERSION,id,status,completed,total:2});
 function fixture(request){
   const updates=[],errors=[],scheduled=[];
