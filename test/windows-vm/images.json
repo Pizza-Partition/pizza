@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "default_image": "tiny11core-pro-26h2-26300.9725-x64",
+  "images": [
+    {
+      "id": "tiny11core-pro-26h2-26300.9725-x64",
+      "variant": "tiny11core-pro",
+      "architecture": "x86_64",
+      "url": "https://downloads.sourceforge.net/project/tiny11-automated/Tiny11Core-Pro-26H2/Tiny11Core-26H2-26300.9725-English-Pro-2026-10-27.iso",
+      "source_page": "https://github.com/Sensei002/tiny11-automated/releases/tag/26300.9725-core-pro",
+      "filename": "Tiny11Core-26H2-26300.9725-English-Pro-2026-10-27.iso",
+      "size": 3928064000,
+      "sha256": "3525a473aa28fff3346000f6223f84c08d7ea9cec034f78d0bf34f3cb60d311b",
+      "required_capabilities": [
+        "Native Zig test service on COM2",
+        "Storage WMI (MSFT_Disk/MSFT_Partition/MSFT_Volume)",
+        "BitLocker WMI (Win32_EncryptableVolume)",
+        "Virtual Disk API (VHDX)",
+        "NTFS/FAT32",
+        "UEFI firmware variables"
+      ]
+    }
+  ],
+  "download": {
+    "cache_dir": ".zig-cache/windows-e2e/images",
+    "retries": 3,
+    "connect_timeout_seconds": 20,
+    "timeout_seconds": 21600,
+    "connections": 8
+  }
+}

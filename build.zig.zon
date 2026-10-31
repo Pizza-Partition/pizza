@@ -1,33 +1,34 @@
 .{
-    .name = .pizza_transition,
-    .version = "0.1.0",
-    .fingerprint = 0xf34c1f157b9ef8cb,
+    .name = .pizza,
+    .version = "0.5.0",
+    .fingerprint = 0xcfdd826fa2266c7f,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
+        .libvirt_api = .{
+            .url = "https://download.libvirt.org/libvirt-12.8.0.tar.xz",
+            .hash = "N-V-__8AADR3NAnorJlWczMXh09Wr3XfsjNa3cDS-iGmb0wW",
+            .lazy = true,
+        },
+        .zig_webui = .{
+            .url = "https://github.com/webui-dev/zig-webui/archive/e89087c3e9846d73c4d71865140d8a8ab64082b5.tar.gz",
+            .hash = "zig_webui-2.5.1-M4z7zWPVAQA4GRBq-uS_aPAoxjFsR0hbpszpshwGX1Tf",
+        },
+        .libblockdev = .{
+            .url = "https://github.com/storaged-project/libblockdev/archive/refs/tags/3.5.0.tar.gz",
+            .hash = "N-V-__8AAIX8MAAaAwnq-lnhfCmx_Iylsu5ne0qy8mwBObjr",
+        },
         .clap = .{
             .url = "git+https://github.com/Hejsil/zig-clap#05faf3905e8548f5cc269a8836e154065e70128d",
             .hash = "clap-0.12.0-oBajB4XpAQCF1WRKnD5KOKPsnwwT_NNdAJ7Ww3irYJac",
         },
-        .vaxis = .{
-            .url = "git+https://github.com/rockorager/libvaxis#0a1f55da77dcf99d638cf409b0c439e1542996d5",
-            .hash = "vaxis-0.6.0-BWNV_K4WDQC9AopHvrPY98uwQwG2kATn91rbbjvTX-XR",
+        .pizza_maintenance = .{
+            .url = "https://github.com/Pizza-Partition/pizza-maint/releases/download/v0.5.1/pizza-maint-x86_64.tar.gz",
+            .hash = "N-V-__8AAFiNeRxf8CIuc5iNpxre_fh57llqwYTiH1_kw90_",
+        },
+        .win32 = .{
+            .url = "https://codeload.github.com/marlersoft/zigwin32/tar.gz/6f281fc4a9a6135000ba0f9c6792d0c2b8e7acff",
+            .hash = "win32-42.0.39-preview-mX5pFbz94wMrS0KOy_U9-B8H6DJqIvICfPIE6bRajtvv",
         },
     },
-    .paths = .{
-        "build.zig",
-        "build.zig.zon",
-        "build",
-        ".zigversion",
-        "core",
-        "ui",
-        "tools",
-        "config",
-        "test",
-        "docs",
-        "README.md",
-        ".editorconfig",
-        ".prettierrc.json",
-        ".prettierignore",
-        ".clang-format",
-    },
+    .paths = .{ "build.zig", "build.zig.zon", "core", "build", "test", "ui/partition/prototype", "packaging", "README.md", ".zigversion" },
 }

@@ -1,0 +1,1726 @@
+{
+  "baseline_head": "b72f02ba800d12dccc32a69903a2d537ec346bef",
+  "snapshot": "/tmp/pizza-before-split-20261027-163407/worktree.tar.gz",
+  "files": [
+    {
+      "path": ".editorconfig",
+      "owner": "per-repository configuration",
+      "destination": ".editorconfig"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "owner": "per-repository configuration",
+      "destination": ".github/workflows/ci.yml"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "owner": "per-repository configuration",
+      "destination": ".github/workflows/release.yml"
+    },
+    {
+      "path": ".gitignore",
+      "owner": "per-repository configuration",
+      "destination": ".gitignore"
+    },
+    {
+      "path": ".prettierignore",
+      "owner": "per-repository configuration",
+      "destination": ".prettierignore"
+    },
+    {
+      "path": ".prettierrc.json",
+      "owner": "per-repository configuration",
+      "destination": ".prettierrc.json"
+    },
+    {
+      "path": ".zigversion",
+      "owner": "per-repository configuration",
+      "destination": ".zigversion"
+    },
+    {
+      "path": "README.md",
+      "owner": "per-repository configuration",
+      "destination": "README.md"
+    },
+    {
+      "path": "build.zig",
+      "owner": "per-repository configuration",
+      "destination": "build.zig"
+    },
+    {
+      "path": "build.zig.zon",
+      "owner": "per-repository configuration",
+      "destination": "build.zig.zon"
+    },
+    {
+      "path": "build/bundle.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle.zig"
+    },
+    {
+      "path": "build/bundle/application.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/application.zig"
+    },
+    {
+      "path": "build/bundle/archive.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/archive.zig"
+    },
+    {
+      "path": "build/bundle/assemble.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/assemble.zig"
+    },
+    {
+      "path": "build/bundle/files.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/files.zig"
+    },
+    {
+      "path": "build/bundle/fulcio.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/fulcio.zig"
+    },
+    {
+      "path": "build/bundle/release.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/release.zig"
+    },
+    {
+      "path": "build/bundle/root.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/root.zig"
+    },
+    {
+      "path": "build/bundle/schema.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/schema.zig"
+    },
+    {
+      "path": "build/bundle/sigstore.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/sigstore.zig"
+    },
+    {
+      "path": "build/bundle/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/tests.zig"
+    },
+    {
+      "path": "build/bundle/transparency.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/transparency.zig"
+    },
+    {
+      "path": "build/bundle/trust.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/trust.zig"
+    },
+    {
+      "path": "build/bundle/trust/LICENSE",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/trust/LICENSE"
+    },
+    {
+      "path": "build/bundle/trust/README.md",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/trust/README.md"
+    },
+    {
+      "path": "build/bundle/trust/root.json",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/trust/root.json"
+    },
+    {
+      "path": "build/bundle/tuf.zig",
+      "owner": "pizza-maint",
+      "destination": "build/bundle/tuf.zig"
+    },
+    {
+      "path": "build/filesystem/btrfs/bindings.zig",
+      "owner": "pizza-maint",
+      "destination": "build/filesystem/btrfs/bindings.zig"
+    },
+    {
+      "path": "build/filesystem/btrfs/root.zig",
+      "owner": "pizza-maint",
+      "destination": "build/filesystem/btrfs/root.zig"
+    },
+    {
+      "path": "build/filesystem/ext/generate.zig",
+      "owner": "pizza-maint",
+      "destination": "build/filesystem/ext/generate.zig"
+    },
+    {
+      "path": "build/filesystem/ext/root.zig",
+      "owner": "pizza-maint",
+      "destination": "build/filesystem/ext/root.zig"
+    },
+    {
+      "path": "build/filesystem/fat32/generate.zig",
+      "owner": "pizza-maint",
+      "destination": "build/filesystem/fat32/generate.zig"
+    },
+    {
+      "path": "build/filesystem/fat32/root.zig",
+      "owner": "pizza-maint",
+      "destination": "build/filesystem/fat32/root.zig"
+    },
+    {
+      "path": "build/filesystem/ntfs/generate.zig",
+      "owner": "pizza-maint",
+      "destination": "build/filesystem/ntfs/generate.zig"
+    },
+    {
+      "path": "build/filesystem/ntfs/root.zig",
+      "owner": "pizza-maint",
+      "destination": "build/filesystem/ntfs/root.zig"
+    },
+    {
+      "path": "config/bundle/release.json",
+      "owner": "pizza-maint",
+      "destination": "config/bundle/release.json"
+    },
+    {
+      "path": "config/toolchain.json",
+      "owner": "per-repository configuration",
+      "destination": "config/toolchain.json"
+    },
+    {
+      "path": "core/bundle/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/bundle/root.zig"
+    },
+    {
+      "path": "core/host/boot_binding.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/cli.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/compiler.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/esp_anchor.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/helper.zig",
+      "owner": null,
+      "action": "removed: single executable through run0"
+    },
+    {
+      "path": "core/host/inventory.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/linux_efivars.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/linux_inventory.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/main.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/maintenance.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/maintenance_compiler.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/maintenance_filesystem_tests.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/planner.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/session_image.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/session_manifest.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/snapshot.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/tests.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/uefi.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/windows_inventory.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/host/windows_main.zig",
+      "owner": "split",
+      "destination": "pizza/core (current module layout: core/README.md) and pizza-maint/core/maintenance_session (storage-dependent implementation)"
+    },
+    {
+      "path": "core/init/cmdline.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/cmdline.zig"
+    },
+    {
+      "path": "core/init/emergency.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/emergency.zig"
+    },
+    {
+      "path": "core/init/main.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/main.zig"
+    },
+    {
+      "path": "core/init/memory.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/memory.zig"
+    },
+    {
+      "path": "core/init/modules.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/modules.zig"
+    },
+    {
+      "path": "core/init/mounts.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/mounts.zig"
+    },
+    {
+      "path": "core/init/power.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/power.zig"
+    },
+    {
+      "path": "core/init/recovery.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/recovery.zig"
+    },
+    {
+      "path": "core/init/supervisor.zig",
+      "owner": "pizza-maint",
+      "destination": "core/init/supervisor.zig"
+    },
+    {
+      "path": "core/initramfs/archive.zig",
+      "owner": "pizza-maint",
+      "destination": "core/initramfs/archive.zig"
+    },
+    {
+      "path": "core/initramfs/image.zig",
+      "owner": "pizza-maint",
+      "destination": "core/initramfs/image.zig"
+    },
+    {
+      "path": "core/initramfs/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/initramfs/root.zig"
+    },
+    {
+      "path": "core/maint/backend.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/backend.zig"
+    },
+    {
+      "path": "core/maint/devices.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/devices.zig"
+    },
+    {
+      "path": "core/maint/journal.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/journal.zig"
+    },
+    {
+      "path": "core/maint/journal/storage.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/journal/storage.zig"
+    },
+    {
+      "path": "core/maint/journal/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/journal/tests.zig"
+    },
+    {
+      "path": "core/maint/main.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/main.zig"
+    },
+    {
+      "path": "core/maint/plan.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/plan.zig"
+    },
+    {
+      "path": "core/maint/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/root.zig"
+    },
+    {
+      "path": "core/maint/storage/algorithm.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/algorithm.zig"
+    },
+    {
+      "path": "core/maint/storage/block_device.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/block_device.zig"
+    },
+    {
+      "path": "core/maint/storage/device.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/device.zig"
+    },
+    {
+      "path": "core/maint/storage/esp_anchor.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/esp_anchor.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/btrfs/create.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/btrfs/create.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/btrfs/format.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/btrfs/format.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/btrfs/mutate.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/btrfs/mutate.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/btrfs/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/btrfs/root.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/btrfs/scan.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/btrfs/scan.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/btrfs/semantic.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/btrfs/semantic.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ext/create.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ext/create.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ext/io.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ext/io.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ext/mutate.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ext/mutate.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ext/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ext/root.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ext/semantic.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ext/semantic.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/fat32/create.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/fat32/create.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/fat32/format.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/fat32/format.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/fat32/mutate.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/fat32/mutate.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/fat32/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/fat32/root.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/fat32/scan.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/fat32/scan.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/fat32/semantic.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/fat32/semantic.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ntfs/create.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ntfs/create.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ntfs/format.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ntfs/format.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ntfs/io.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ntfs/io.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ntfs/mutate.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ntfs/mutate.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ntfs/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ntfs/root.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/ntfs/semantic.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/ntfs/semantic.zig"
+    },
+    {
+      "path": "core/maint/storage/filesystem/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/filesystem/root.zig"
+    },
+    {
+      "path": "core/maint/storage/maintenance_session.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/maintenance_session.zig"
+    },
+    {
+      "path": "core/maint/storage/memory.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/memory.zig"
+    },
+    {
+      "path": "core/maint/storage/model.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/model.zig"
+    },
+    {
+      "path": "core/maint/storage/mutation.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/mutation.zig"
+    },
+    {
+      "path": "core/maint/storage/partition.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/partition.zig"
+    },
+    {
+      "path": "core/maint/storage/partition_table.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/partition_table.zig"
+    },
+    {
+      "path": "core/maint/storage/probe.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/probe.zig"
+    },
+    {
+      "path": "core/maint/storage/program.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/program.zig"
+    },
+    {
+      "path": "core/maint/storage/program_executor.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/program_executor.zig"
+    },
+    {
+      "path": "core/maint/storage/raw_capsule.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/raw_capsule.zig"
+    },
+    {
+      "path": "core/maint/storage/recovery_store.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/recovery_store.zig"
+    },
+    {
+      "path": "core/maint/storage/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/root.zig"
+    },
+    {
+      "path": "core/maint/storage/semantic.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/semantic.zig"
+    },
+    {
+      "path": "core/maint/storage/service.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/service.zig"
+    },
+    {
+      "path": "core/maint/storage/space.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/space.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/block_device_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/block_device_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/capsule_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/capsule_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/crash.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/crash.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/crash_model.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/crash_model.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/crash_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/crash_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/executor.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/executor.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/btrfs/fixture.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/btrfs/fixture.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/btrfs/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/btrfs/tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/copy_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/copy_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/ext/fixture.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/ext/fixture.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/ext/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/ext/tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/ext/tools.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/ext/tools.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/fat32/fixture.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/fat32/fixture.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/fat32/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/fat32/tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/fixture.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/fixture.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/fixtures.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/fixtures.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/layout_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/layout_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/memory_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/memory_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/ntfs/fixture.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/ntfs/fixture.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/ntfs/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/ntfs/tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/semantic_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/semantic_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem/suite.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem/suite.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/filesystem_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/filesystem_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/fixture.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/fixture.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/gpt_fixture.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/gpt_fixture.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/gpt_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/gpt_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/image.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/image.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/image_device.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/image_device.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/main.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/main.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/maintenance_session_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/maintenance_session_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/memory_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/memory_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/planning_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/planning_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/probe_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/probe_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/program_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/program_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/root.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/semantic_contract_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/semantic_contract_tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/support.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/support.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/tests.zig"
+    },
+    {
+      "path": "core/maint/storage/testing/tools.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/storage/testing/tools.zig"
+    },
+    {
+      "path": "core/maint/testing/devices.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/testing/devices.zig"
+    },
+    {
+      "path": "core/maint/testing/execution_tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/testing/execution_tests.zig"
+    },
+    {
+      "path": "core/maint/testing/main.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/testing/main.zig"
+    },
+    {
+      "path": "core/maint/testing/simulated_plan.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/testing/simulated_plan.zig"
+    },
+    {
+      "path": "core/maint/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "core/maint/tests.zig"
+    },
+    {
+      "path": "core/proto/contract.json",
+      "owner": "pizza-maint",
+      "destination": "protocol/contract.json"
+    },
+    {
+      "path": "core/proto/generated.zig",
+      "owner": "pizza-maint",
+      "destination": "protocol/generated.zig"
+    },
+    {
+      "path": "core/proto/root.zig",
+      "owner": "pizza-maint",
+      "destination": "protocol/root.zig"
+    },
+    {
+      "path": "core/session.zig",
+      "owner": "pizza-maint",
+      "destination": "core/session.zig"
+    },
+    {
+      "path": "core/session/storage.zig",
+      "owner": "pizza-maint",
+      "destination": "core/session/storage.zig"
+    },
+    {
+      "path": "core/tests.zig",
+      "owner": "per-repository configuration",
+      "destination": "test/host.zig"
+    },
+    {
+      "path": "core/transition/image.zig",
+      "owner": null,
+      "action": "retired; preserved in snapshot and Git history"
+    },
+    {
+      "path": "core/transition/kexec.zig",
+      "owner": null,
+      "action": "retired; preserved in snapshot and Git history"
+    },
+    {
+      "path": "core/transition/main.zig",
+      "owner": null,
+      "action": "retired; preserved in snapshot and Git history"
+    },
+    {
+      "path": "core/transition/report.zig",
+      "owner": null,
+      "action": "read-only renderer moved to pizza-maint/core/maint/report.zig"
+    },
+    {
+      "path": "core/transition/state.zig",
+      "owner": null,
+      "action": "retired; preserved in snapshot and Git history"
+    },
+    {
+      "path": "core/utils/archive.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/archive.zig"
+    },
+    {
+      "path": "core/utils/asn1.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/asn1.zig"
+    },
+    {
+      "path": "core/utils/elf.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/elf.zig"
+    },
+    {
+      "path": "core/utils/filesystem.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/filesystem.zig"
+    },
+    {
+      "path": "core/utils/json.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/json.zig"
+    },
+    {
+      "path": "core/utils/memory.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/memory.zig"
+    },
+    {
+      "path": "core/utils/newc.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/newc.zig"
+    },
+    {
+      "path": "core/utils/process.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/process.zig"
+    },
+    {
+      "path": "core/utils/root.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/root.zig"
+    },
+    {
+      "path": "core/utils/time.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/time.zig"
+    },
+    {
+      "path": "core/utils/x509.zig",
+      "owner": "pizza-maint",
+      "destination": "core/utils/x509.zig"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/README.md",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/README.md"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/build_assets.py",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/build_assets.py"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/generation.json",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/generation.json"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-add.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-add.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-check.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-check.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-disk-24.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-disk-24.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-disk-classic.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-disk-classic.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-disk-funghi.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-disk-funghi.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-disk-garden.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-disk-garden.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-edit-selection.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-edit-selection.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-eight-recipes.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-eight-recipes.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-mark.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-mark.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-pull-slice.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-pull-slice.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-resize.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-resize.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-slice-basil.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-slice-basil.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-slice-bite.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-slice-bite.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/icons/pizza-slice.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/icons/pizza-slice.svg"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/index.html",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/index.html"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/keyframes/01-welcome.png",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/keyframes/01-welcome.png"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/keyframes/02-select-disk.png",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/keyframes/02-select-disk.png"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/keyframes/03-edit-slices.png",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/keyframes/03-edit-slices.png"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/keyframes/04-review-confirm.png",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/keyframes/04-review-confirm.png"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/keyframes/05-all-set.png",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/keyframes/05-all-set.png"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/README.md",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/README.md"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/REUSE.md",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/REUSE.md"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/SHA256SUMS",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/SHA256SUMS"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/SOURCE-MANIFEST.json",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/SOURCE-MANIFEST.json"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/assets/fonts/CormorantGaramond-OFL.txt",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/assets/fonts/CormorantGaramond-OFL.txt"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/assets/fonts/CormorantGaramond.ttf",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/assets/fonts/CormorantGaramond.ttf"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/assets/fonts/DMSans-OFL.txt",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/assets/fonts/DMSans-OFL.txt"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/assets/fonts/DMSans.ttf",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/assets/fonts/DMSans.ttf"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/output/complete.png",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/output/complete.png"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/output/toppings/after.png",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/output/toppings/after.png"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/artwork.cpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/artwork.cpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/artwork.hpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/artwork.hpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/dough.hpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/dough.hpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/main.cpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/main.cpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/relief.cpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/relief.cpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/relief.hpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/relief.hpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/renderer.cpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/renderer.cpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/renderer.hpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/renderer.hpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/reveal.hpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/reveal.hpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/src/timeline.hpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/src/timeline.hpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/tests/relief_test.cpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/tests/relief_test.cpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/tests/timeline_test.cpp",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/tests/timeline_test.cpp"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/native-blend2d/xmake.lua",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/native-blend2d/xmake.lua"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/pizza-ui-assets.zip",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/pizza-ui-assets.zip"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/pizza-web-prototype.zip",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/pizza-web-prototype.zip"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/previews/icon-sheet.png",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/previews/icon-sheet.png"
+    },
+    {
+      "path": "design/pizza-ui-2026-10-26/previews/icon-sheet.svg",
+      "owner": "pizza",
+      "destination": "design/pizza-ui-2026-10-26/previews/icon-sheet.svg"
+    },
+    {
+      "path": "docs/boot-image.md",
+      "owner": "shared-history",
+      "destination": "docs/boot-image.md"
+    },
+    {
+      "path": "docs/dependencies.md",
+      "owner": "shared-history",
+      "destination": "docs/dependencies.md"
+    },
+    {
+      "path": "docs/filesystems.md",
+      "owner": "shared-history",
+      "destination": "docs/filesystems.md"
+    },
+    {
+      "path": "docs/hardware-experiment-2026-10-23.md",
+      "owner": "shared-history",
+      "destination": "docs/hardware-experiment-2026-10-23.md"
+    },
+    {
+      "path": "docs/hardware-experiment-2026-10-24.md",
+      "owner": "shared-history",
+      "destination": "docs/hardware-experiment-2026-10-24.md"
+    },
+    {
+      "path": "docs/hardware-filesystems-2026-10-25.md",
+      "owner": "shared-history",
+      "destination": "docs/hardware-filesystems-2026-10-25.md"
+    },
+    {
+      "path": "docs/hardware-production-2026-10-24.md",
+      "owner": "shared-history",
+      "destination": "docs/hardware-production-2026-10-24.md"
+    },
+    {
+      "path": "docs/init-recovery.md",
+      "owner": "shared-history",
+      "destination": "docs/init-recovery.md"
+    },
+    {
+      "path": "docs/maintenance-session-v3.md",
+      "owner": "shared-history",
+      "destination": "docs/maintenance-session-v3.md"
+    },
+    {
+      "path": "docs/manual-hardware-check.md",
+      "owner": "shared-history",
+      "destination": "docs/manual-hardware-check.md"
+    },
+    {
+      "path": "docs/spec-clarifications.md",
+      "owner": "shared-history",
+      "destination": "docs/spec-clarifications.md"
+    },
+    {
+      "path": "docs/storage-refactor-validation.md",
+      "owner": "shared-history",
+      "destination": "docs/storage-refactor-validation.md"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-21-pizza-maintenance-plan.md",
+      "owner": "shared-history",
+      "destination": "docs/superpowers/plans/2026-10-21-pizza-maintenance-plan.md"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-10-13-pizza-transition-design.md",
+      "owner": "shared-history",
+      "destination": "docs/superpowers/specs/2026-10-13-pizza-transition-design.md"
+    },
+    {
+      "path": "docs/transition.md",
+      "owner": "shared-history",
+      "destination": "docs/transition.md"
+    },
+    {
+      "path": "packaging/linux/org.pizza.inventory.policy",
+      "owner": null,
+      "action": "retired; authorization launches the current executable"
+    },
+    {
+      "path": "root.zcs",
+      "owner": null,
+      "action": "removed; generated Zig incremental compilation state, ignored by *.zcs"
+    },
+    {
+      "path": "test/README.md",
+      "owner": "pizza-maint",
+      "destination": "test/README.md"
+    },
+    {
+      "path": "test/fixtures/sigstore/pizza-bundle-v0.3.1.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/pizza-bundle-v0.3.1.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/pizza-bundle-v0.3.1.lock.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/pizza-bundle-v0.3.1.lock.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/trusted_root.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/trusted_root.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/10.root.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/10.root.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/11.root.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/11.root.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/12.root.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/12.root.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/13.root.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/13.root.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/14.root.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/14.root.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/14.targets.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/14.targets.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/15.root.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/15.root.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/16.root.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/16.root.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/166.snapshot.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/166.snapshot.json"
+    },
+    {
+      "path": "test/fixtures/sigstore/tuf/timestamp.json",
+      "owner": "shared-history",
+      "destination": "test/fixtures/sigstore/tuf/timestamp.json"
+    },
+    {
+      "path": "test/hardware/README.md",
+      "owner": "pizza-maint",
+      "destination": "test/hardware/README.md"
+    },
+    {
+      "path": "test/hardware/filesystems.zig",
+      "owner": "pizza-maint",
+      "destination": "test/hardware/filesystems.zig"
+    },
+    {
+      "path": "test/hardware/matrix.zig",
+      "owner": "pizza-maint",
+      "destination": "test/hardware/matrix.zig"
+    },
+    {
+      "path": "test/hardware/matrix_fixture.zig",
+      "owner": "pizza-maint",
+      "destination": "test/hardware/matrix_fixture.zig"
+    },
+    {
+      "path": "test/hardware/matrix_test.zig",
+      "owner": "pizza-maint",
+      "destination": "test/hardware/matrix_test.zig"
+    },
+    {
+      "path": "test/integration/bundle.zig",
+      "owner": "pizza-maint",
+      "destination": "test/integration/bundle.zig"
+    },
+    {
+      "path": "test/integration/cli.zig",
+      "owner": "pizza-maint",
+      "destination": "test/integration/cli.zig"
+    },
+    {
+      "path": "test/integration/journal.zig",
+      "owner": "pizza-maint",
+      "destination": "test/integration/journal.zig"
+    },
+    {
+      "path": "test/integration/maintenance_session.py",
+      "owner": "pizza-maint",
+      "destination": "test/integration/maintenance_session.py"
+    },
+    {
+      "path": "test/integration/storage.zig",
+      "owner": "pizza-maint",
+      "destination": "test/integration/storage.zig"
+    },
+    {
+      "path": "test/main.zig",
+      "owner": "pizza-maint",
+      "destination": "test/main.zig"
+    },
+    {
+      "path": "test/matrix/abi_check.zig",
+      "owner": "pizza-maint",
+      "destination": "test/matrix/abi_check.zig"
+    },
+    {
+      "path": "test/matrix/run.zig",
+      "owner": "pizza-maint",
+      "destination": "test/matrix/run.zig"
+    },
+    {
+      "path": "test/matrix/targets.json",
+      "owner": "pizza-maint",
+      "destination": "test/matrix/targets.json"
+    },
+    {
+      "path": "test/qemu/executor.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/executor.zig"
+    },
+    {
+      "path": "test/qemu/executor_guest.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/executor_guest.zig"
+    },
+    {
+      "path": "test/qemu/faults.json",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/faults.json"
+    },
+    {
+      "path": "test/qemu/harness.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/harness.zig"
+    },
+    {
+      "path": "test/qemu/journal.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/journal.zig"
+    },
+    {
+      "path": "test/qemu/journal_guest.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/journal_guest.zig"
+    },
+    {
+      "path": "test/qemu/kexec.zig",
+      "owner": null,
+      "action": "retired; preserved in snapshot and Git history"
+    },
+    {
+      "path": "test/qemu/kexec_guest.zig",
+      "owner": null,
+      "action": "retired; preserved in snapshot and Git history"
+    },
+    {
+      "path": "test/qemu/maintenance.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/maintenance.zig"
+    },
+    {
+      "path": "test/qemu/recovery.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/recovery.zig"
+    },
+    {
+      "path": "test/qemu/recovery_guest.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/recovery_guest.zig"
+    },
+    {
+      "path": "test/qemu/root.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/root.zig"
+    },
+    {
+      "path": "test/qemu/smoke.zig",
+      "owner": "pizza-maint",
+      "destination": "test/qemu/smoke.zig"
+    },
+    {
+      "path": "test/qemu/transition.zig",
+      "owner": null,
+      "action": "retired; preserved in snapshot and Git history"
+    },
+    {
+      "path": "test/tests.zig",
+      "owner": "pizza-maint",
+      "destination": "test/tests.zig"
+    },
+    {
+      "path": "tools/doctor.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/doctor.zig"
+    },
+    {
+      "path": "tools/fetch_bundle.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/fetch_bundle.zig"
+    },
+    {
+      "path": "tools/image.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/image.zig"
+    },
+    {
+      "path": "tools/main.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/main.zig"
+    },
+    {
+      "path": "tools/package_bundle.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/package_bundle.zig"
+    },
+    {
+      "path": "tools/package_tools.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/package_tools.zig"
+    },
+    {
+      "path": "tools/prepare.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/prepare.zig"
+    },
+    {
+      "path": "tools/protocol.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/protocol.zig"
+    },
+    {
+      "path": "tools/verify_bundle.zig",
+      "owner": "pizza-maint",
+      "destination": "tools/verify_bundle.zig"
+    },
+    {
+      "path": "ui/README.md",
+      "owner": "per-repository configuration",
+      "destination": "ui/README.md"
+    },
+    {
+      "path": "ui/execution/tui/root.zig",
+      "owner": "pizza-maint",
+      "destination": "ui/execution/tui/root.zig"
+    },
+    {
+      "path": "ui/package-lock.json",
+      "owner": "per-repository configuration",
+      "destination": "ui/package-lock.json"
+    },
+    {
+      "path": "ui/package.json",
+      "owner": "per-repository configuration",
+      "destination": "ui/package.json"
+    },
+    {
+      "path": "ui/partition/README.md",
+      "owner": "pizza",
+      "destination": "ui/partition/README.md"
+    },
+    {
+      "path": "ui/partition/__pycache__/serve.cpython-314.pyc",
+      "owner": "pizza",
+      "destination": "ui/partition/__pycache__/serve.cpython-314.pyc"
+    },
+    {
+      "path": "ui/partition/prototype/README.md",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/README.md"
+    },
+    {
+      "path": "ui/partition/prototype/app.js",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/app.js"
+    },
+    {
+      "path": "ui/partition/prototype/assets/fonts/CormorantGaramond-OFL.txt",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/assets/fonts/CormorantGaramond-OFL.txt"
+    },
+    {
+      "path": "ui/partition/prototype/assets/fonts/CormorantGaramond.ttf",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/assets/fonts/CormorantGaramond.ttf"
+    },
+    {
+      "path": "ui/partition/prototype/assets/fonts/DMSans-OFL.txt",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/assets/fonts/DMSans-OFL.txt"
+    },
+    {
+      "path": "ui/partition/prototype/assets/fonts/DMSans.ttf",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/assets/fonts/DMSans.ttf"
+    },
+    {
+      "path": "ui/partition/prototype/assets/pizza-mark.svg",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/assets/pizza-mark.svg"
+    },
+    {
+      "path": "ui/partition/prototype/bootstrap.js",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/bootstrap.js"
+    },
+    {
+      "path": "ui/partition/prototype/format-picker.js",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/format-picker.js"
+    },
+    {
+      "path": "ui/partition/prototype/generated/contract.d.ts",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/generated/contract.d.ts"
+    },
+    {
+      "path": "ui/partition/prototype/generated/contract.js",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/generated/contract.js"
+    },
+    {
+      "path": "ui/partition/prototype/index.html",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/index.html"
+    },
+    {
+      "path": "ui/partition/prototype/live-model.js",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/live-model.js"
+    },
+    {
+      "path": "ui/partition/prototype/live.js",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/live.js"
+    },
+    {
+      "path": "ui/partition/prototype/partition-bar.js",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/partition-bar.js"
+    },
+    {
+      "path": "ui/partition/prototype/pizza.js",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/pizza.js"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/01-welcome.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/01-welcome.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/02-select-disk.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/02-select-disk.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/03-edit-slices.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/03-edit-slices.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/04-review-confirm.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/04-review-confirm.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/05-all-set.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/05-all-set.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/06-mobile-editor.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/06-mobile-editor.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/07-selection-fix.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/07-selection-fix.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/08-format-picker.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/08-format-picker.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/09-external-callouts.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/09-external-callouts.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/10-partition-bar-menu.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/10-partition-bar-menu.png"
+    },
+    {
+      "path": "ui/partition/prototype/screenshots/11-real-disk-inventory.png",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/screenshots/11-real-disk-inventory.png"
+    },
+    {
+      "path": "ui/partition/prototype/style.css",
+      "owner": "pizza",
+      "destination": "ui/partition/prototype/style.css"
+    },
+    {
+      "path": "ui/partition/serve.py",
+      "owner": null,
+      "action": "retired; replaced by pizza serve"
+    },
+    {
+      "path": "ui/partition/test/__pycache__/transport_test.cpython-314.pyc",
+      "owner": "pizza",
+      "destination": "ui/partition/test/__pycache__/transport_test.cpython-314.pyc"
+    },
+    {
+      "path": "ui/partition/test/live-model.test.mjs",
+      "owner": "pizza",
+      "destination": "ui/partition/test/live-model.test.mjs"
+    },
+    {
+      "path": "ui/partition/test/transport_test.py",
+      "owner": "pizza",
+      "destination": "ui/partition/test/transport_test.py"
+    }
+  ]
+}

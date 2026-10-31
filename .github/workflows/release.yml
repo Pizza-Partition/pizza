@@ -2,78 +2,45 @@ name: Release Pizza
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
-env:
-  GH_TOKEN: ${{ github.token }}
-  ZIG: zig
+  contents: read
 jobs:
+  tests:
+    uses: ./.github/workflows/ci.yml
   release:
+    needs: tests
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          node-version: '22'
-      - name: Install pinned toolchain and packaging tools
+          pattern: pizza-*-x86_64
+          path: dist
+          merge-multiple: true
+      - name: Check complete installation packages
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format libarchive-tools qemu-system-x86
-          node --input-type=module <<'JS'
-          import fs from 'node:fs';
-          import { createHash } from 'node:crypto';
-          import { execFileSync } from 'node:child_process';
-          const lock = JSON.parse(fs.readFileSync('config/toolchain.json', 'utf8'));
-          const source = lock['x86_64-linux'];
-          const response = await fetch(source.url);
-          if (!response.ok) throw new Error(`Zig download: ${response.status}`);
-          const bytes = Buffer.from(await response.arrayBuffer());
-          if (createHash('sha256').update(bytes).digest('hex') !== source.sha256) throw new Error('Zig SHA-256 mismatch');
-          const directory = fs.mkdtempSync(`${process.env.RUNNER_TEMP}/pizza-zig-`);
-          fs.writeFileSync(`${directory}/zig.tar.xz`, bytes);
-          execFileSync('tar', ['-xJf', `${directory}/zig.tar.xz`, '-C', directory]);
-          const binary = `${directory}/zig-x86_64-linux-${lock.version}`;
-          fs.appendFileSync(process.env.GITHUB_PATH, `${binary}\n`);
-          JS
-      - name: Test and assemble with verified runtime
-        run: |
-          zig build deps
-          zig build fmt-check
-          zig build all test -Doptimize=safe
-          zig build image -Doptimize=safe
-          mkdir -p dist
-          cp zig-out/share/pizza/bundle.tar.gz dist/pizza-application-x86_64.tar.gz
-          cp zig-out/share/pizza/vmlinuz zig-out/share/pizza/maint.img zig-out/share/pizza/maint.img.pizza.json dist/
-          zig-out/bin/pizza-tools pack-tools --directory zig-out/bin --output dist/pizza-tools-x86_64.tar.gz
+          tar -tzf dist/pizza-linux-x86_64.tar.gz | grep -Fx './bin/maint.efi'
+          unzip -l dist/pizza-windows-x86_64.zip | grep -F 'bin/maint.efi'
           cd dist
-          sha256sum *.tar.gz vmlinuz maint.img maint.img.pizza.json > SHA256SUMS
-      - name: Check the application interpreter and search path
-        run: |
-          readelf -lW zig-out/runtime/bundle/overlay/opt/pizza/bundle/bin/pizza-maint | grep -F 'Requesting program interpreter: lib/ld-linux-x86-64.so.2'
-          readelf -dW zig-out/runtime/bundle/overlay/opt/pizza/bundle/bin/pizza-maint | grep -F '$ORIGIN/../lib'
-          /lib64/ld-linux-x86-64.so.2 zig-out/runtime/bundle/overlay/opt/pizza/bundle/bin/pizza-maint --help > /dev/null
-      - name: Boot the actual maintenance image and native WPE bridge
-        run: |
-          timeout 180 qemu-system-x86_64 -machine q35 -accel tcg -cpu max -m 4096M -display none -serial stdio -monitor none -nic none -kernel dist/vmlinuz -initrd dist/maint.img -append 'console=ttyS0 loglevel=4 panic=1 rdinit=/init pizza.boot=bridge_test' -no-reboot > /tmp/pizza-release-boot.log 2>&1 || { cat /tmp/pizza-release-boot.log; exit 1; }
-          cat /tmp/pizza-release-boot.log
-          grep -F 'PIZZA_BRIDGE_SELFTEST_READY' /tmp/pizza-release-boot.log
-          grep -F 'PIZZA_INIT_BRIDGE_CHILD_READY' /tmp/pizza-release-boot.log
-      - name: Attest application and tools
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        if: startsWith(github.ref, 'refs/tags/v')
         id: attest
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
             dist/*.tar.gz
-            dist/vmlinuz
-            dist/maint.img
-            dist/maint.img.pizza.json
-      - name: Publish Pizza preview release
+            dist/*.zip
+      - name: Publish tested release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
           ATTESTATION: ${{ steps.attest.outputs.bundle-path }}
         run: |
           cp "$ATTESTATION" dist/attestation.json
-          gh release create "$RELEASE_TAG" dist/* --verify-tag --prerelease --title "$RELEASE_TAG" --generate-notes
+          gh release create "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "$RELEASE_TAG" --generate-notes

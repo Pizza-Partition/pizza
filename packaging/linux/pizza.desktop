@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Pizza
+Comment=Plan disk partitions visually
+Exec=pizza
+Icon=pizza
+Terminal=false
+Categories=System;Utility;

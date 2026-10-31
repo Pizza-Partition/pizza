@@ -1,5 +1,5 @@
-name: transition-scaffold
-on: [push, pull_request, workflow_dispatch]
+name: pizza-host
+on: [push, pull_request, workflow_dispatch, workflow_call]
 permissions:
   contents: read
 env:
@@ -36,20 +36,75 @@ jobs:
             throw new Error('Zig version mismatch');
           fs.appendFileSync(process.env.GITHUB_PATH, `${installed}\n`);
           JS
-      - name: Install build and bundle tools
-        run: sudo apt-get update && sudo apt-get install -y clang-format binutils libarchive-tools
-      - name: Build, validate and test
+      - name: Install system backend dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libblockdev-dev libblockdev-part3 libblockdev-fs3 libglib2.0-dev libblkid-dev e2fsprogs
+      - name: Check and test host
         run: |
-          zig build deps
-          zig build fmt-check
-          zig build doctor all test
-      - name: Build static release artifacts
-        run: zig build -Doptimize=safe
-      - name: Assert static PID 1 binary
+          zig build fmt-check check test test-domain test-host-image test-vm-cli test-vm-common test-vm-config test-vm-download test-vm-console
+          node --test ui/partition/test/*.test.mjs
+          zig build -Doptimize=safe
+      - name: Compile backend without GUI dependencies
+        run: zig build -Dheadless=true --prefix "$RUNNER_TEMP/pizza-headless"
+      - name: Compile VM artifact builder
         run: |
-          if readelf -lW zig-out/bin/pizza-init | grep -q INTERP; then
-            echo 'Maintenance PID1 must not resolve host libc'; exit 1
-          fi
-
-# VM, full-transition and distro-matrix jobs require explicit kernel/image
-# fixtures. They are not silently skipped or represented as green acceptance.
+          zig build compile-linux-vm -Dheadless=true
+          zig build build-windows-vm-artifacts -Dheadless=true -- --help
+      - name: Check system-linked installation
+        run: |
+          test -f zig-out/share/applications/pizza.desktop
+          readelf -dW zig-out/bin/pizza | grep -F 'libblockdev.so.3'
+          zig-out/bin/pizza inventory > "$RUNNER_TEMP/pizza-inventory.json"
+      - name: Cross-compile Windows backend
+        run: zig build compile -Dtarget=x86_64-windows-gnu -Dwindows-lld=true
+      - name: Package tested Linux installation
+        run: |
+          mkdir -p dist
+          tar -czf dist/pizza-linux-x86_64.tar.gz -C zig-out .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pizza-linux-x86_64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install locked Zig 0.17.0
+        shell: pwsh
+        run: |
+          $lock = Get-Content config/toolchain.json -Raw | ConvertFrom-Json
+          $source = $lock.'x86_64-windows'
+          $directory = Join-Path $env:RUNNER_TEMP ('pizza-zig-' + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $directory | Out-Null
+          $archive = Join-Path $directory 'zig.zip'
+          Invoke-WebRequest $source.url -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $source.sha256) { throw 'Zig archive SHA-256 mismatch' }
+          Expand-Archive $archive $directory
+          $installed = Join-Path $directory ('zig-x86_64-windows-' + $lock.version)
+          if ((& (Join-Path $installed 'zig.exe') version).Trim() -ne $lock.version) { throw 'Zig version mismatch' }
+          $installed | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Compile and test Windows backend
+        shell: pwsh
+        run: |
+          zig build fmt-check check test-domain -Dwindows-lld=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          zig build -Doptimize=safe -Dwindows-lld=true
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./zig-out/bin/pizza.exe inventory | Out-File -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'pizza-inventory.json')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Accept Windows writes on a private temporary VHDX
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          zig build test-windows-image -Dheadless=true -Dwindows-lld=true --summary all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package tested Windows installation
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path zig-out/* -DestinationPath dist/pizza-windows-x86_64.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pizza-windows-x86_64
+          path: dist/*.zip
+          if-no-files-found: error

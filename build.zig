@@ -1,674 +1,186 @@
 const std = @import("std");
-const bundle_steps = @import("build/bundle.zig");
-comptime {
-    const required = std.mem.trim(u8, @embedFile(".zigversion"), " \t\r\n");
-    if (!std.mem.eql(u8, @import("builtin").zig_version_string, required))
-        @compileError("Pizza requires Zig " ++ required ++ "; current compiler is " ++ @import("builtin").zig_version_string ++ ". Select the compiler pinned in .zigversion and config/toolchain.json.");
-}
-
-/// Registers core binaries, engineering commands, format checks and test suites.
-/// Host tools use the baseline Linux target; core binaries use the selected build target.
-pub fn build(b: *std.Build) void {
-    // Formatting, doctor and test subprocesses must use the compiler running this build.
-    b.graph.environ_map.put("ZIG", b.graph.zig_exe) catch @panic("OOM");
-    const npm = requireHostTool(b, "NPM", "npm");
-    _ = requireHostTool(b, "NODE", "node");
-    // TODO: Support for other OSes.
-    const target = b.standardTargetOptions(
-        .{
-            .default_target = .{
-                .cpu_arch = .x86_64,
-                .cpu_model = .baseline,
-                .os_tag = .linux,
-                .os_version_min = .{
-                    .semver = .{ .major = 4, .minor = 18, .patch = 0 },
-                },
-                .abi = .musl,
-            },
-        },
-    );
-
+const webui_build = @import("zig_webui");
+pub fn build(b: *std.Build) !void {
+    try @import("test/windows-vm/build.zig").add(b);
+    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const host_target = b.resolveTargetQuery(
-        .{
-            .cpu_arch = .x86_64,
-            .cpu_model = .baseline,
-            .os_tag = .linux,
-            .os_version_min = .{
-                .semver = .{ .major = 4, .minor = 18, .patch = 0 },
-            },
-            .abi = .musl,
-        },
-    );
-    // 3rd parties
-    const clap = b.dependency("clap", .{ .target = host_target, .optimize = .safe });
-    const core_clap = b.dependency("clap", .{ .target = target, .optimize = optimize });
-    const core_utils = b.createModule(.{
-        .root_source_file = b.path("core/utils/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const utils = b.addModule(
-        "utils",
-        .{
-            .root_source_file = b.path("core/utils/root.zig"),
-            .target = host_target,
-            .optimize = .safe,
-        },
-    );
-    const bundle = b.addModule("bundle", .{
-        .root_source_file = b.path("core/bundle/root.zig"),
-        .target = host_target,
-        .optimize = .safe,
-        .imports = &.{.{ .name = "utils", .module = utils }},
-    });
-    const core_bundle = b.createModule(.{
-        .root_source_file = b.path("core/bundle/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{.{ .name = "utils", .module = core_utils }},
-    });
-    const bundle_build = b.addModule("bundle_build", .{
-        .root_source_file = b.path("build/bundle/root.zig"),
-        .target = host_target,
-        .optimize = .safe,
-        .imports = &.{
-            .{ .name = "utils", .module = utils },
-            .{ .name = "bundle", .module = bundle },
-        },
-    });
-    const initramfs = b.addModule("initramfs", .{
-        .root_source_file = b.path("core/initramfs/root.zig"),
-        .target = host_target,
-        .optimize = .safe,
-        .imports = &.{
-            .{ .name = "utils", .module = utils },
-            .{ .name = "bundle", .module = bundle },
-            .{ .name = "bundle_build", .module = bundle_build },
-        },
-    });
-    const vm = b.addModule(
-        "vm",
-        .{
-            .root_source_file = b.path("test/qemu/root.zig"),
-            .target = host_target,
-            .optimize = .safe,
-            .imports = &.{
-                .{ .name = "utils", .module = utils },
-                .{ .name = "bundle_build", .module = bundle_build },
-                .{ .name = "initramfs", .module = initramfs },
-                .{ .name = "clap", .module = clap.module("clap") },
-            },
-        },
-    );
-    const matrix = b.addModule(
-        "matrix",
-        .{
-            .root_source_file = b.path("test/matrix/run.zig"),
-            .target = host_target,
-            .optimize = .safe,
-            .imports = &.{
-                .{ .name = "utils", .module = utils },
-                .{ .name = "bundle", .module = bundle },
-                .{ .name = "bundle_build", .module = bundle_build },
-                .{ .name = "vm", .module = vm },
-                .{ .name = "clap", .module = clap.module("clap") },
-            },
-        },
-    );
-    const tool = b.addExecutable(
-        .{
-            .name = "pizza-tools",
-            .root_module = b.createModule(
-                .{
-                    .root_source_file = b.path("tools/main.zig"),
-                    .target = host_target,
-                    .optimize = .safe,
-                    .imports = &.{
-                        .{ .name = "utils", .module = utils },
-                        .{ .name = "clap", .module = clap.module("clap") },
-                        .{ .name = "bundle_build", .module = bundle_build },
-                        .{ .name = "initramfs", .module = initramfs },
-                    },
-                    .link_libc = false,
-                },
-            ),
-        },
-    );
-    enableNewElfLinker(tool);
-    b.installArtifact(tool);
-    const runner = b.addExecutable(.{
-        .name = "pizza-tests",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/main.zig"),
-            .target = host_target,
-            .optimize = .safe,
-            .imports = &.{
-                .{ .name = "utils", .module = utils },
-                .{ .name = "vm", .module = vm },
-                .{ .name = "matrix", .module = matrix },
-                .{ .name = "clap", .module = clap.module("clap") },
-            },
-            .link_libc = false,
-        }),
-    });
-    enableNewElfLinker(runner);
-    const install_tests = b.step("test-runners", "Build and install optional test executables");
-    install_tests.dependOn(&b.addInstallArtifact(runner, .{}).step);
-    const tools = b.addRunArtifact(tool);
-    tools.setCwd(b.path("."));
-    tools.addPassthruArgs();
-    b.step(
-        "tools",
-        "Run a native Zig infrastructure command (arguments after --)",
-    ).dependOn(&tools.step);
-    const fmt = command(b, tool, &.{"fmt"});
-    b.step(
-        "fmt",
-        "Format Zig, JSON, frontend, docs and C sources",
-    ).dependOn(&fmt.step);
-    const fmt_check = command(b, tool, &.{ "fmt", "--check" });
-    b.step(
-        "fmt-check",
-        "Check formatting without modifying files",
-    ).dependOn(&fmt_check.step);
-    const web_deps = b.addSystemCommand(
-        &.{
-            npm,
-            "--prefix",
-            "ui",
-            "ci",
-            "--include=dev",
-            "--engine-strict",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-        },
-    );
-
-    const deps = b.step(
-        "deps",
-        "Install locked developer and formatter dependencies",
-    );
-    deps.dependOn(&web_deps.step);
-    const check = command(b, tool, &.{ "proto", "--check" });
-    const proto = b.addModule(
-        "proto",
-        .{
-            .root_source_file = b.path("core/proto/root.zig"),
-            .target = target,
-            .optimize = optimize,
-        },
-    );
-    const power = b.addModule(
-        "power",
-        .{
-            .root_source_file = b.path("core/power.zig"),
-            .target = target,
-            .optimize = optimize,
-        },
-    );
-
-    const journal = b.createModule(.{
-        .root_source_file = b.path("core/maint/journal.zig"),
-        .target = host_target,
-        .optimize = .safe,
-        .imports = &.{
-            .{ .name = "proto", .module = b.createModule(.{ .root_source_file = b.path("core/proto/root.zig"), .target = host_target, .optimize = .safe }) },
-            .{ .name = "utils", .module = utils },
-        },
-    });
-    const core_journal = b.createModule(.{
-        .root_source_file = b.path("core/maint/journal.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "utils", .module = core_utils } },
-    });
-    const core_session = sessionModule(b, target, optimize, proto, core_utils);
-    vm.addImport("journal", journal);
-    const journal_guest = b.addExecutable(.{
-        .name = "pizza-journal-guest",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/qemu/journal_guest.zig"),
-            .target = host_target,
-            .optimize = .safe,
-            .imports = &.{
-                .{ .name = "journal", .module = journal },
-                .{ .name = "power", .module = power },
-                .{ .name = "mounts", .module = b.createModule(.{
-                    .root_source_file = b.path("core/init/mounts.zig"),
-                    .target = host_target,
-                    .optimize = .safe,
-                    .imports = &.{.{ .name = "utils", .module = utils }},
-                }) },
-            },
-        }),
-    });
-    enableNewElfLinker(journal_guest);
-    install_tests.dependOn(&b.addInstallArtifact(journal_guest, .{}).step);
-    const run_journal = command(b, runner, &.{ "journal", "--binary" });
-    run_journal.addArtifactArg(journal_guest);
-    run_journal.addPassthruArgs();
-    b.step("test-journal", "Verify journal persistence across two QEMU boots").dependOn(&run_journal.step);
-
-    var maintenance: *std.Build.Step.Compile = undefined;
-    var transition_cli: *std.Build.Step.Compile = undefined;
-    for ([_][2][]const u8{
-        .{ "pizza", "core/transition/main.zig" },
-        .{ "pizza-init", "core/init/main.zig" },
-    }) |entry| {
-        const exe = b.addExecutable(
-            .{
-                .name = entry[0],
-                .root_module = b.createModule(
-                    .{
-                        .root_source_file = b.path(entry[1]),
-                        .target = target,
-                        .optimize = optimize,
-                        .imports = &.{
-                            .{ .name = "proto", .module = proto },
-                            .{ .name = "power", .module = power },
-                        },
-                        .link_libc = false,
-                    },
-                ),
-            },
-        );
-        enableNewElfLinker(exe);
-        exe.step.dependOn(&check.step);
-        exe.root_module.addImport("clap", core_clap.module("clap"));
-        exe.root_module.addImport("bundle", core_bundle);
-        exe.root_module.addImport("utils", core_utils);
-        exe.root_module.addImport("journal", core_journal);
-        exe.root_module.addImport("session", core_session);
-        exe.root_module.addImport("initramfs_archive", b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = target, .optimize = optimize, .imports = &.{.{ .name = "utils", .module = core_utils }} }));
-        if (std.mem.eql(u8, entry[0], "pizza-init"))
-            maintenance = exe
-        else
-            transition_cli = exe;
-        b.installArtifact(exe);
+    const test_sources = @import("test/build.zig").Sources.init(b);
+    const windows_lld = b.option(bool, "windows-lld", "Use LLD for Windows GNU CRT and system import libraries") orelse false;
+    const dev = b.addSystemCommand(&.{ b.graph.zig_exe, "build", "-fincremental", "--watch" });
+    dev.setCwd(b.path("."));
+    dev.addPassthruArgs();
+    b.step("dev", "Rebuild on source changes with incremental compilation (build arguments after --)").dependOn(&dev.step);
+    const clap = b.dependency("clap", .{ .target = target, .optimize = optimize }).module("clap");
+    const maintenance_package = b.dependency("pizza_maintenance", .{});
+    const protocol_root = maintenance_package.path("protocol");
+    const proto = b.createModule(.{ .root_source_file = protocol_root.path(b, "root.zig"), .target = target, .optimize = optimize });
+    const protocol_bindings = b.addInstallDirectory(.{ .source_dir = protocol_root.path(b, "generated"), .install_dir = .prefix, .install_subdir = "share/pizza/protocol" });
+    b.getInstallStep().dependOn(&protocol_bindings.step);
+    b.step("protocol-bindings", "Install the locked protocol bindings for frontend tests and preview").dependOn(&protocol_bindings.step);
+    const linux = if (target.result.os.tag == .linux) @import("build/linux.zig").Bindings.init(b, target, optimize) else null;
+    const win32 = if (target.result.os.tag == .windows) b.dependency("win32", .{}).module("win32") else null;
+    const headless = b.option(bool, "headless", "Build the backend CLI without WebUI, a WebView or embedded frontend") orelse false;
+    const webui = if (headless) null else b.dependency("zig_webui", .{ .target = target, .optimize = optimize, .is_static = true, .enable_tls = false });
+    if (webui) |dep| if (target.result.os.tag == .linux) try @import("build/linux.zig").patch(b, dep.module("webui"));
+    const module = b.createModule(.{ .root_source_file = b.path("core/main.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "proto", .module = proto }} });
+    module.addImport("clap", clap);
+    if (webui) |dep| module.addImport("webui", dep.module("webui"));
+    const image_path = maintenance_package.path("maint.efi");
+    b.dependOnFileContents(image_path);
+    const image_file = try maintenance_package.builder.root.join(b.allocator, "maint.efi");
+    const image_bytes = try image_file.root_dir.handle.readFileAlloc(b.graph.io, image_file.sub_path, b.allocator, .limited(512 * 1024 * 1024));
+    if (image_bytes.len == 0 or image_bytes.len % 4096 != 0) return error.MaintenanceImageMustBeBlockAligned;
+    var image_digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(image_bytes, &image_digest, .{});
+    const install_image = b.addInstallFileWithDir(image_path, .bin, "maint.efi");
+    b.getInstallStep().dependOn(&install_image.step);
+    const maintenance_files = b.addInstallDirectory(.{ .source_dir = maintenance_package.path(""), .install_dir = .prefix, .install_subdir = "share/pizza/maintenance" });
+    const maintenance_step = b.step("maintenance-files", "Install the pinned maintenance release for VM acceptance");
+    maintenance_step.dependOn(&maintenance_files.step);
+    const configuration = b.addOptions();
+    configuration.addOption(bool, "headless", headless);
+    configuration.addOption([32]u8, "maintenance_image_digest", image_digest);
+    module.addOptions("build_options", configuration);
+    if (linux) |bindings| {
+        bindings.addTo(module);
+        if (!headless) module.addImport("gobject", bindings.gobject);
     }
-
-    const app_target = b.resolveTargetQuery(.{
-        .cpu_arch = .x86_64,
-        .cpu_model = .baseline,
-        .os_tag = .linux,
-        .os_version_min = .{ .semver = .{ .major = 4, .minor = 18, .patch = 0 } },
-        .abi = .gnu,
-        .glibc_version = .{ .major = 2, .minor = 28, .patch = 0 },
-    });
-    const app_proto = b.createModule(.{ .root_source_file = b.path("core/proto/root.zig"), .target = app_target, .optimize = optimize });
-    const app_utils = b.createModule(.{ .root_source_file = b.path("core/utils/root.zig"), .target = app_target, .optimize = optimize });
-    const app_session = sessionModule(b, app_target, optimize, app_proto, app_utils);
-    const application = b.addExecutable(.{
-        .name = "pizza-maint",
-        .linkage = .dynamic,
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("core/maint/main.zig"),
-            .target = app_target,
-            .optimize = optimize,
-            .link_libc = true,
-            .imports = &.{
-                .{ .name = "proto", .module = app_proto },                                                                           .{ .name = "utils", .module = app_utils },
-                .{ .name = "clap", .module = b.dependency("clap", .{ .target = app_target, .optimize = optimize }).module("clap") },
-                .{ .name = "journal", .module = b.createModule(.{
-                    .root_source_file = b.path("core/maint/journal.zig"),
-                    .target = app_target,
-                    .optimize = optimize,
-                    .imports = &.{ .{ .name = "proto", .module = app_proto }, .{ .name = "utils", .module = app_utils } },
-                }) },
-            },
-        }),
-    });
-    application.root_module.addImport("session", app_session);
-    enableNewElfLinker(application);
-    application.step.dependOn(&check.step);
-    b.installArtifact(application);
-    const app_ui = executionModules(b, app_target, optimize, app_proto, app_utils, application.root_module.import_table.get("journal").?, app_session);
-    application.root_module.addImport("maintenance", app_ui.maintenance);
-    application.root_module.addImport("execution_gui", app_ui.gui);
-    application.root_module.addImport("execution_tui", app_ui.tui);
-    const run_tui = command(b, application, &.{"--tui-self-test"});
-    b.step("test-tui", "Verify libvaxis on a real controlling terminal").dependOn(&run_tui.step);
-    const executor_guest = b.addExecutable(.{
-        .name = "pizza-executor-guest",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/qemu/executor_guest.zig"),
-            .target = host_target,
-            .optimize = .safe,
-            .imports = &.{
-                .{ .name = "journal", .module = journal },                                               .{ .name = "proto", .module = journal.import_table.get("proto").? },                                                                                        .{ .name = "utils", .module = utils }, .{ .name = "power", .module = power },
-                .{ .name = "mounts", .module = journal_guest.root_module.import_table.get("mounts").? }, .{ .name = "supervisor", .module = b.createModule(.{ .root_source_file = b.path("core/init/supervisor.zig"), .target = host_target, .optimize = .safe }) },
-            },
-        }),
-    });
-    enableNewElfLinker(executor_guest);
-    install_tests.dependOn(&b.addInstallArtifact(executor_guest, .{}).step);
-    const fixture_session = sessionModule(b, host_target, .safe, journal.import_table.get("proto").?, utils);
-    const kexec_guest = b.addExecutable(.{
-        .name = "pizza-kexec-guest",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("test/qemu/kexec_guest.zig"),
-            .target = host_target,
-            .optimize = .safe,
-            .imports = &.{
-                .{ .name = "session", .module = fixture_session },                                       .{ .name = "journal", .module = journal },
-                .{ .name = "proto", .module = journal.import_table.get("proto").? },                     .{ .name = "utils", .module = utils },
-                .{ .name = "mounts", .module = journal_guest.root_module.import_table.get("mounts").? },
-            },
-        }),
-    });
-    enableNewElfLinker(kexec_guest);
-    install_tests.dependOn(&b.addInstallArtifact(kexec_guest, .{}).step);
-    // Large-image hashing inside TCG is prohibitively slow in Debug. Exercise
-    // the real transition CLI source with the same Safe mode as the host runner.
-    const kexec_cli = b.addExecutable(.{
-        .name = "pizza-kexec-cli",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("core/transition/main.zig"),
-            .target = host_target,
-            .optimize = .safe,
-            .imports = &.{
-                .{ .name = "proto", .module = journal.import_table.get("proto").? },
-                .{ .name = "utils", .module = utils },
-                .{ .name = "journal", .module = journal },
-                .{ .name = "session", .module = fixture_session },
-                .{ .name = "clap", .module = clap.module("clap") },
-                .{ .name = "initramfs_archive", .module = b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = host_target, .optimize = .safe, .imports = &.{.{ .name = "utils", .module = utils }} }) },
-            },
-        }),
-    });
-    enableNewElfLinker(kexec_cli);
-    const run_kexec = command(b, runner, &.{ "kexec", "--fixture" });
-    run_kexec.addArtifactArg(kexec_guest);
-    run_kexec.addArg("--binary");
-    run_kexec.addArtifactArg(kexec_cli);
-    run_kexec.addPassthruArgs();
-    b.step("test-kexec", "Verify real systemd kexec, production journal handoff and recovery").dependOn(&run_kexec.step);
-    const run_executor = command(b, runner, &.{ "executor", "--fixture" });
-    run_executor.addArtifactArg(executor_guest);
-    run_executor.addArg("--report-binary");
-    run_executor.addArtifactArg(transition_cli);
-    run_executor.addPassthruArgs();
-    b.step("test-executor", "Verify live execution and persisted fault recovery in QEMU").dependOn(&run_executor.step);
-    const run_bridge = command(b, application, &.{ "--self-test", "--headless", "--panel", "ui/execution/gui/dist/index.html", "--wpe-library", "/usr/lib/libWPEWebKit-2.0.so.1" });
-    run_bridge.addPassthruArgs();
-    b.step("test-bridge", "Run the real local panel and WPE native bridge headlessly").dependOn(&run_bridge.step);
-
-    const tests = b.addTest(
-        .{
-            .root_module = b.createModule(
-                .{
-                    .root_source_file = b.path("core/tests.zig"),
-                    .target = target,
-                    .optimize = optimize,
-                    .imports = &.{
-                        .{ .name = "proto", .module = proto },
-                        .{ .name = "power", .module = power },
-                        .{ .name = "utils", .module = core_utils },
-                    },
-                },
-            ),
-        },
-    );
-    enableNewElfLinker(tests);
-    tests.root_module.addImport("journal", core_journal);
-    tests.root_module.addImport("session", core_session);
-    tests.root_module.addImport("initramfs_archive", b.createModule(.{ .root_source_file = b.path("core/initramfs/archive.zig"), .target = target, .optimize = optimize, .imports = &.{.{ .name = "utils", .module = core_utils }} }));
-    const test_ui = executionModules(b, target, optimize, proto, core_utils, core_journal, core_session);
-    tests.root_module.addImport("maintenance", test_ui.maintenance);
-    tests.root_module.addImport("execution_tui", test_ui.tui);
-    tests.step.dependOn(&check.step);
-    const test_step = b.step(
-        "test",
-        "Run Zig module/integration tests and frontend tests",
-    );
-    test_step.dependOn(&executor_guest.step);
-    test_step.dependOn(&kexec_guest.step);
-    test_step.dependOn(&b.addRunArtifact(tests).step);
-    const utils_tests = b.addTest(.{ .root_module = utils });
-    enableNewElfLinker(utils_tests);
-    test_step.dependOn(&b.addRunArtifact(utils_tests).step);
-    const bundle_tests = b.addTest(.{ .root_module = bundle });
-    enableNewElfLinker(bundle_tests);
-    const run_bundle_tests = b.addRunArtifact(bundle_tests);
-    run_bundle_tests.setCwd(b.path("."));
-    run_bundle_tests.step.dependOn(b.getInstallStep());
-    test_step.dependOn(&run_bundle_tests.step);
-    const bundle_build_tests = b.addTest(.{ .root_module = bundle_build });
-    enableNewElfLinker(bundle_build_tests);
-    const run_bundle_build_tests = b.addRunArtifact(bundle_build_tests);
-    run_bundle_build_tests.setCwd(b.path("."));
-    run_bundle_build_tests.step.dependOn(b.getInstallStep());
-    test_step.dependOn(&run_bundle_build_tests.step);
-    const archive_tests = b.addTest(.{ .root_module = initramfs });
-    enableNewElfLinker(archive_tests);
-    test_step.dependOn(&b.addRunArtifact(archive_tests).step);
-    for ([_][]const u8{
-        "test/qemu/harness.zig",
-        "test/qemu/transition.zig",
-    }) |source| {
-        const module_tests = b.addTest(.{
-            .root_module = b.createModule(.{
-                .root_source_file = b.path(source),
-                .target = host_target,
-                .optimize = .debug,
-                .imports = &.{
-                    .{ .name = "utils", .module = utils },
-                    .{ .name = "clap", .module = clap.module("clap") },
-                },
-            }),
-        });
-        enableNewElfLinker(module_tests);
-        test_step.dependOn(&b.addRunArtifact(module_tests).step);
+    if (win32) |m| module.addImport("win32", m);
+    if (!headless) try webui_build.addEmbeddedDir(b, module, .{ .path = "ui/partition/prototype", .http_responses = false });
+    const exe = b.addExecutable(.{ .name = if (headless) "pizza-backend" else "pizza", .root_module = module });
+    configureCompile(exe, windows_lld);
+    b.installArtifact(exe);
+    if (!headless and target.result.os.tag == .linux) {
+        b.installFile("packaging/linux/pizza.desktop", "share/applications/pizza.desktop");
+        b.installFile("ui/partition/prototype/assets/pizza-mark.svg", "share/icons/hicolor/scalable/apps/pizza.svg");
     }
-    const matrix_tests = b.addTest(.{ .root_module = matrix });
-    enableNewElfLinker(matrix_tests);
-    test_step.dependOn(&b.addRunArtifact(matrix_tests).step);
-    const test_binaries = b.addOptions();
-    test_binaries.addOptionPath("pizza", transition_cli.getEmittedBin());
-    test_binaries.addOptionPath("tools", tool.getEmittedBin());
-    test_binaries.addOptionPath("runner", runner.getEmittedBin());
-    test_binaries.addOptionPath("application", application.getEmittedBin());
-    const integration_tests = b.addTest(
-        .{
-            .root_module = b.createModule(
-                .{
-                    .root_source_file = b.path("test/tests.zig"),
-                    .target = host_target,
-                    .optimize = .debug,
-                    .imports = &.{
-                        .{ .name = "utils", .module = utils },
-                        .{ .name = "vm", .module = vm },
-                        .{ .name = "bundle", .module = bundle },
-                        .{ .name = "proto", .module = proto },
-                    },
-                },
-            ),
-        },
-    );
-    integration_tests.root_module.addImport("journal", journal);
-    enableNewElfLinker(integration_tests);
-    integration_tests.root_module.addOptions("test_binaries", test_binaries);
-    const run_integration = b.addRunArtifact(integration_tests);
-    run_integration.setCwd(b.path("."));
-    run_integration.step.dependOn(b.getInstallStep());
-    test_step.dependOn(&runner.step);
-    test_step.dependOn(&application.step);
-    test_step.dependOn(&run_integration.step);
-    const frontend_tests = b.addSystemCommand(&.{ npm, "--prefix", "ui", "test" });
-    test_step.dependOn(&frontend_tests.step);
+    const run = b.addRunArtifact(exe);
+    run.addPassthruArgs();
+    b.step("run", "Run Pizza").dependOn(&run.step);
+    b.step("host", "Build the desktop/privileged executable into the output directory").dependOn(b.getInstallStep());
+    const tests = b.addTest(.{ .name = "host-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.root("host.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "proto", .module = proto }} }) });
+    configureCompile(tests, windows_lld);
+    tests.root_module.addImport("clap", clap);
+    // Embed build-input evidence so staged tests do not depend on paths from
+    // the machine that cross-compiled them.
+    tests.root_module.addOptions("protocol_package", try protocolEvidence(b, protocol_root));
+    if (linux) |bindings| bindings.addTo(tests.root_module);
+    if (win32) |m| tests.root_module.addImport("win32", m);
+    const test_run = b.addRunArtifact(tests);
+    const domain = b.addTest(.{ .name = "domain-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.root("domain.zig"), .target = target, .optimize = optimize, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "clap", .module = clap } } }) });
+    configureCompile(domain, windows_lld);
+    b.step("test-domain", "Run planning, execution and application tests without system or WebUI dependencies").dependOn(&b.addRunArtifact(domain).step);
 
-    const generate = command(b, tool, &.{"proto"});
-    b.step("proto", "Regenerate protocol bindings").dependOn(&generate.step);
-
-    b.step(
-        "check-proto",
-        "Fail if generated contract files drift",
-    ).dependOn(&check.step);
-
-    const panel = b.addSystemCommand(
-        &.{
-            npm,
-            "--prefix",
-            "ui",
-            "run",
-            "build",
-            "--",
-            "--proto-checker",
-        },
-    );
-    panel.addArtifactArg(tool);
-    panel.step.dependOn(&check.step);
-    run_bridge.step.dependOn(&panel.step);
-    b.step("panel", "Build the initramfs execution GUI").dependOn(&panel.step);
-
-    const bundle_step = bundle_steps.add(b, tool, maintenance, application, panel);
-
-    const all = b.step("all", "Build core, frontend and the complete bundle");
-    all.dependOn(bundle_step);
-    all.dependOn(b.getInstallStep());
-    all.dependOn(&panel.step);
-    const frontend_check = b.addSystemCommand(
-        &.{
-            npm,
-            "--prefix",
-            "ui",
-            "run",
-            "check",
-        },
-    );
-    const check_step = b.step(
-        "check",
-        "Check protocol drift and frontend syntax",
-    );
-    check_step.dependOn(&check.step);
-    check_step.dependOn(&frontend_check.step);
-    for ([_][3][]const u8{
-        .{
-            "doctor",
-            "doctor",
-            "Check host build dependencies",
-        },
-        .{
-            "bootstrap-zig",
-            "bootstrap-zig",
-            "Fetch and verify the pinned toolchain outside the checkout",
-        },
-        .{
-            "clean",
-            "clean",
-            "Remove only enumerated generated outputs",
-        },
-    }) |entry| {
-        const run = command(b, tool, &.{entry[1]});
-        run.addPassthruArgs();
-        b.step(entry[0], entry[2]).dependOn(&run.step);
+    const vm_tests = b.addTest(.{ .name = "vm-common-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.files.addCopyFile(b.path("test/vm/guest.zig"), "shared-guest-tests.zig"), .target = target, .optimize = optimize, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "vm_common", .module = b.createModule(.{ .root_source_file = b.path("test/vm/common.zig"), .target = target, .optimize = optimize }) } } }) });
+    configureCompile(vm_tests, windows_lld);
+    b.step("test-vm-common", "Check shared VM acceptance postconditions without a VM").dependOn(&b.addRunArtifact(vm_tests).step);
+    if (linux) |bindings| {
+        const images = b.addTest(.{ .name = "linux-image-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.root("linux-image.zig"), .target = target, .optimize = optimize, .link_libc = true }) });
+        configureCompile(images, windows_lld);
+        images.root_module.addImport("libc", bindings.libc);
+        images.root_module.addImport("libblockdev", bindings.libblockdev);
+        images.root_module.addImport("proto", proto);
+        b.step("test-host-image", "Exercise system libblockdev on temporary regular-file images without root").dependOn(&b.addRunArtifact(images).step);
+        const guest_sources = b.addWriteFiles();
+        _ = guest_sources.addCopyDirectory(b.path("core"), "core", .{});
+        _ = guest_sources.addCopyFile(b.path("test/vm/guest.zig"), "shared_guest.zig");
+        const guest = b.addExecutable(.{ .name = "linux-vm-guest", .root_module = b.createModule(.{ .root_source_file = guest_sources.addCopyFile(b.path("test/linux-vm/guest.zig"), "guest.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "vm_common", .module = b.createModule(.{ .root_source_file = b.path("test/vm/common.zig"), .target = target, .optimize = optimize }) } } }) });
+        bindings.addTo(guest.root_module);
+        configureCompile(guest, false);
+        const stage = b.step("stage-linux-tests", "Stage Linux product and guest test binaries for QEMU");
+        stage.dependOn(b.getInstallStep());
+        stage.dependOn(&b.addInstallArtifact(guest, .{}).step);
+        inline for (.{ .{ tests, "host" }, .{ domain, "domain" }, .{ images, "image" } }) |entry| stage.dependOn(&b.addInstallArtifact(entry[0], .{ .dest_sub_path = "linux-tests/" ++ entry[1] ++ "-tests" }).step);
     }
-    for ([_][3][]const u8{
-        .{ "test-smoke", "smoke", "Boot the static PID 1 in QEMU" },
-        .{ "test-maintenance", "maintenance", "Boot the layered maintenance image in QEMU" },
-        .{
-            "test-transition",
-            "transition",
-            "Check an explicitly supplied full-transition fixture",
-        },
-        .{ "test-matrix", "matrix", "Run isolated ABI checks with supplied cloud fixtures" },
-    }) |entry| {
-        const run = command(b, runner, &.{entry[1]});
-        run.addPassthruArgs();
-        if (std.mem.eql(u8, entry[0], "test-smoke"))
-            run.step.dependOn(b.getInstallStep());
-        b.step(entry[0], entry[2]).dependOn(&run.step);
+    const protocol_compile = b.addTest(.{ .name = "protocol-tests", .root_module = proto });
+    configureCompile(protocol_compile, windows_lld);
+    const protocol_tests = b.addRunArtifact(protocol_compile);
+    if (linux != null) b.top_level_steps.get("stage-linux-tests").?.step.dependOn(&b.addInstallArtifact(protocol_compile, .{ .dest_sub_path = "linux-tests/protocol-tests" }).step);
+    try @import("test/linux-vm/build.zig").add(b);
+
+    b.step("test", "Run host planner and backend tests").dependOn(&test_run.step);
+    b.top_level_steps.get("test").?.step.dependOn(&protocol_tests.step);
+    b.step("test-host", "Run host planner and backend tests").dependOn(&test_run.step);
+    b.top_level_steps.get("test-host").?.step.dependOn(&protocol_tests.step);
+    b.step("check", "Compile the application and run host tests").dependOn(&test_run.step);
+    b.top_level_steps.get("check").?.step.dependOn(&protocol_tests.step);
+    b.top_level_steps.get("check").?.step.dependOn(&exe.step);
+    b.top_level_steps.get("check").?.step.dependOn(&protocol_bindings.step);
+    const fmt = b.addFmt(.{ .paths = &.{ b.path("build.zig"), b.path("build.zig.zon"), b.path("core"), b.path("build"), b.path("test") }, .check = true });
+    b.step("fmt-check", "Check Zig source formatting").dependOn(&fmt.step);
+    b.step("compile", "Compile the application and host tests without running them").dependOn(&exe.step);
+    b.top_level_steps.get("compile").?.step.dependOn(&vm_tests.step);
+    b.top_level_steps.get("compile").?.step.dependOn(&tests.step);
+    if (win32) |m| {
+        const guest_sources = b.addWriteFiles();
+        _ = guest_sources.addCopyDirectory(b.path("core"), "core", .{});
+        _ = guest_sources.addCopyFile(b.path("test/vm/guest.zig"), "shared_guest.zig");
+        const guest_source = guest_sources.addCopyFile(b.path("test/windows-vm/guest.zig"), "guest.zig");
+        _ = guest_sources.addCopyFile(b.path("test/windows-vm/agent.zig"), "agent.zig");
+        _ = guest_sources.addCopyFile(b.path("test/windows-vm/agent_protocol.zig"), "agent_protocol.zig");
+        _ = guest_sources.addCopyFile(b.path("test/windows-vm/servicing.zig"), "servicing.zig");
+        _ = guest_sources.addCopyFile(b.path("test/windows-vm/cli.zig"), "cli.zig");
+        const guest = b.addExecutable(.{ .name = "windows-vm-guest", .root_module = b.createModule(.{ .root_source_file = guest_source, .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "win32", .module = m }, .{ .name = "vm_common", .module = b.createModule(.{ .root_source_file = b.path("test/vm/common.zig"), .target = target, .optimize = optimize }) } } }) });
+        configureCompile(guest, windows_lld);
+        guest.root_module.addImport("clap", clap);
+        const images = b.addTest(.{ .name = "windows-image-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.root("windows-image.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "win32", .module = m } } }) });
+        configureCompile(images, windows_lld);
+        b.top_level_steps.get("compile").?.step.dependOn(&images.step);
+        b.step("test-windows-image", "Run elevated Windows acceptance on a private temporary VHDX only").dependOn(&b.addRunArtifact(images).step);
+        const stage = b.step("stage-windows-tests", "Stage Windows test binaries for running in a VM without Zig");
+        stage.dependOn(&b.addInstallArtifact(guest, .{}).step);
+        stage.dependOn(b.getInstallStep());
+        inline for (.{ .{ tests, "host-tests.exe" }, .{ domain, "domain-tests.exe" }, .{ protocol_compile, "protocol-tests.exe" }, .{ images, "image-tests.exe" } }) |entry| {
+            stage.dependOn(&b.addInstallArtifact(entry[0], .{ .dest_sub_path = "windows-tests/" ++ entry[1] }).step);
+        }
     }
 }
 
-/// UI sources live under ui/; each target shares one business/protocol identity.
-fn executionModules(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: ?std.builtin.OptimizeMode,
-    proto: *std.Build.Module,
-    utils: *std.Build.Module,
-    journal: *std.Build.Module,
-    session: *std.Build.Module,
-) struct { maintenance: *std.Build.Module, gui: *std.Build.Module, tui: *std.Build.Module } {
-    const tui = b.createModule(.{
-        .root_source_file = b.path("ui/execution/tui/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "proto", .module = proto },
-            .{ .name = "journal", .module = journal },
-            .{ .name = "vaxis", .module = b.dependency("vaxis", .{ .target = target, .optimize = optimize }).module("vaxis") },
+fn configureCompile(compile: *std.Build.Step.Compile, windows_lld: bool) void {
+    compile.incremental = true;
+    switch (compile.rootModuleTarget().os.tag) {
+        .windows => {
+            // With the pinned Zig, LLVM + native COFF leaves CRT/Win32 symbols
+            // unresolved even without WebUI/zigwin32. See docs/windows-backend.md.
+            compile.use_lld = windows_lld;
+            compile.incremental = !windows_lld;
         },
-    });
-    const maintenance = b.createModule(.{
-        .root_source_file = b.path("core/maint/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "proto", .module = proto },
-            .{ .name = "utils", .module = utils },
-            .{ .name = "journal", .module = journal },
-            .{ .name = "execution_tui", .module = tui },
-            .{ .name = "session", .module = session },
+        .linux => {
+            compile.use_lld = false;
+            compile.use_new_linker = true; // Zig's Elf2.zig linker.
         },
-    });
-    const gui = b.createModule(.{
-        .root_source_file = b.path("ui/execution/gui/host.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "proto", .module = proto },
-            .{ .name = "maintenance", .module = maintenance },
-        },
-    });
-    return .{ .maintenance = maintenance, .gui = gui, .tui = tui };
+        else => {},
+    }
 }
 
-fn enableNewElfLinker(compile: *std.Build.Step.Compile) void {
-    if (compile.rootModuleTarget().os.tag != .linux) return;
-    compile.use_lld = false;
-    compile.use_new_linker = true;
-}
-
-fn command(
-    b: *std.Build,
-    tool: *std.Build.Step.Compile,
-    args: []const []const u8,
-) *std.Build.Step.Run {
-    const run = b.addRunArtifact(tool);
-    run.setCwd(b.path("."));
-    run.addArgs(args);
-    return run;
-}
-
-fn requireHostTool(
-    b: *std.Build,
-    variable: []const u8,
-    default: []const u8,
-) []const u8 {
-    const name = b.graph.environ_map.get(variable) orelse default;
-    return b.findProgram(.{ .names = &.{name} }) orelse
-        std.process.fatal(
-            "Required host tool '{s}' is unavailable; install it and add it to PATH (or set {s}).",
-            .{ name, variable },
-        );
-}
-
-fn sessionModule(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: ?std.builtin.OptimizeMode,
-    proto: *std.Build.Module,
-    utils: *std.Build.Module,
-) *std.Build.Module {
-    return b.createModule(.{
-        .root_source_file = b.path("core/session.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "utils", .module = utils } },
-    });
+fn protocolEvidence(b: *std.Build, root: std.Build.LazyPath) !*std.Build.Step.Options {
+    const options = b.addOptions();
+    const base: std.Build.Cache.Path = switch (root) {
+        .dependency => |d| try d.dependency.builder.root.join(b.allocator, d.sub_path),
+        .cwd_relative => |path| .initCwd(path),
+        else => return error.UnsupportedProtocolSource,
+    };
+    const manifest_file = try base.join(b.allocator, "manifest.json");
+    const manifest_path = root.path(b, "manifest.json");
+    b.dependOnFileContents(manifest_path);
+    const manifest_bytes = try manifest_file.root_dir.handle.readFileAlloc(b.graph.io, manifest_file.sub_path, b.allocator, .limited(65536));
+    const Manifest = struct { wire_version: u16, source: []const u8, files: []const struct { name: []const u8, sha256: []const u8 } };
+    const manifest = try std.json.parseFromSliceLeaky(Manifest, b.allocator, manifest_bytes, .{});
+    const names = try b.allocator.alloc([]const u8, manifest.files.len);
+    const hashes = try b.allocator.alloc([]const u8, manifest.files.len);
+    for (manifest.files, 0..) |file, i| {
+        if (std.fs.path.isAbsolute(file.name) or std.mem.indexOf(u8, file.name, "..") != null) return error.InvalidManifestPath;
+        const path = root.path(b, file.name);
+        b.dependOnFileContents(path);
+        const input = try base.join(b.allocator, file.name);
+        const bytes = try input.root_dir.handle.readFileAlloc(b.graph.io, input.sub_path, b.allocator, .limited(16 * 1024 * 1024));
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
+        names[i] = file.name;
+        hashes[i] = try b.allocator.dupe(u8, &std.fmt.bytesToHex(digest, .lower));
+    }
+    options.addOption([]const u8, "manifest", manifest_bytes);
+    options.addOption([]const []const u8, "names", names);
+    options.addOption([]const []const u8, "hashes", hashes);
+    return options;
 }

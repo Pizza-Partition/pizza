@@ -1,193 +1,44 @@
-> 运行环境发布测试现位于 [pizza-bundle](https://github.com/Pizza-Partition/pizza-bundle)。
-> 本仓库消费固定且通过 attestation 验证的发布；旧的逐文件清单和本地软件包准备流程已移除。
-> 当前组装命令见 [dependencies.md](../docs/dependencies.md)。
+# 测试
 
-# Transition test infrastructure
+独立测试入口、测试替身和 VM 编排都放在本目录。
 
-The tooling and test runners are Zig programs built with the pinned 0.17.0 release.
-Run `zig build deps` to install locked frontend dependencies. `zig build test`
-runs core tests, runtime contract and consumption tests, initramfs tests, native integration tests, and npm frontend tests.
-`zig build fmt-check` is the CI formatting gate; Zig and ZON use the official `zig fmt`.
-C formatting uses system clang-format.
-Feasibility experiments and VM fixtures belong outside the checkout.
+| 入口                      | 范围                                                                 | 命令                                              |
+| ------------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
+| `domain.zig`、`domain/`   | 规划、审批、执行与后台任务的业务测试及替身                           | `zig build test-domain -Dheadless=true`           |
+| `host.zig`、`windows.zig` | 当前平台、授权通信、持久记录与协议包证据                             | `zig build test-host -Dheadless=true`             |
+| `linux-image.zig`         | 仅写入测试创建的普通文件镜像                                         | `zig build test-host-image -Dheadless=true`       |
+| `windows-image.zig`       | Windows 管理员进程中真实 VHDX 测试                                   | `zig build test-windows-image -Dwindows-lld=true` |
+| `windows-vm/`             | Linux/QEMU Windows 完整维护重启及断电流程                            | 见 [windows-vm/README.md](windows-vm/README.md)   |
+| `linux-vm/`               | Linux/QEMU systemd 主系统、UEFI、512/4096 字节扇区完整维护及断电矩阵 | 见 [linux-vm/README.md](linux-vm/README.md)       |
+| `vm/`                     | 两端共用的五场景流程、CLI 来宾验收、布局/收据断言及进程/证据工具     | `zig build test-vm-common -Dheadless=true`        |
 
-Host test commands are dispatched by `main.zig`, separately from `tools/main.zig`.
-Both use the locked `zig-clap` dependency for option parsing and generated help.
-Attested release consumption is implemented natively in `../build/bundle/`;
-minimal runtime path checks live in `../core/bundle/`.
-Initramfs logic lives in `../core/initramfs/`. Generic file, process and JSON helpers live in `../core/utils/`; functions take their required
-allocator, I/O and environment parameters explicitly. Runtime logs use `std.log`.
-`zig build test-runners` installs `zig-out/bin/pizza-tests` and the journal/executor fixtures
-`zig-out/bin/pizza-journal-guest` and `zig-out/bin/pizza-executor-guest`; ordinary builds do not install test executables.
-`zig build test` compiles the host runner and executor fixture as well as running the test suites.
+`zig build stage-windows-tests` 交叉编译并导出 Windows 测试程序；测试分组和命令保持不变。
+Windows 交叉编译不会执行生成的 `.exe`，真实运行应在隔离 VM 或 Windows 测试环境中进行。
 
-Tests for private archive, bridge, acceptance-gate and matrix argument parsing
-implementations live beside those implementations. `zig build test` runs their
-test artifacts explicitly, so these helpers do not need public visibility.
-Module unit tests live beside their implementations. `integration/` exercises
-executable behavior and runtime path confinement.
+`build.zig` 在构建缓存中将 `core/` 和 `test/` 组织到共同的模块根目录，
+使测试能够导入产品源码，不必将测试入口放回 `core/`，也不添加测试专用的公开产品 API。
+源文件旁的内联 `test` 声明仍随其模块一起纳入相应套件。
 
-Runtime trust-policy and archive integration tests live in `../build/bundle/tests.zig`
-and run through `zig build test`: they check pinned source/workflow/ref verification,
-authenticate the real published v0.3.1 fixture with native cryptography, reject modified assets,
-signatures, certificates, log bodies, SETs, Merkle proofs and checkpoints, and reject
-wrong publisher/workflow/tag/commit and artifact digests. They also preserve opaque base
-bytes, round-trip the application layer and reject every truncated certificate.
-They also compare native TAR/gzip output with libarchive, cover long filenames and
-executable symlinks, reject unsafe extraction paths and corrupted gzip CRCs, and
-check archive reproducibility after source timestamps change.
-These tests need no GitHub CLI, credentials or network; bsdtar is only the independent
-archive interoperability oracle.
-`integration/bundle.zig` checks path confinement. Upstream archive construction,
-loader checks and actual WPE smoke tests belong to pizza-bundle's publishing CI.
+Linux 维护控制器随 `test-host` 检查持久状态、ESP 路径规则、交接请求与固件租约；
+镜像和协议来自同一锁定维护发布。平台实现与整机验收边界见
+[Linux 维护控制器](../docs/linux-maintenance.md)。
+`zig build stage-linux-tests` 导出 Linux 产品与四个原生套件，完整重启验收使用独立文件镜像。
 
-- `zig build test`: protocol drift, Zig compilation/refusal boundaries, schema/bridge unit tests, bundle verification tests.
-- `zig build test-smoke`: real static Zig PID1, real host kernel, OVMF, QEMU/TCG. Checks RAM-root and basic mounts, then powers off with explicit `pizza.boot=smoke`. Requires no root or KVM.
-- `zig build test-maintenance -- --kernel-version VERSION`: builds the layered image from a prepared base-plus-application package, attaches a fresh read-only virtio disk, and boots with `pizza.boot=selftest`. Requires RAM-root, mounts, matching kernel modules, a block device, successful execution of dynamic `bin/bwrap --version`, direct-child and orphan reaping, TERM/INT handling, the ordinary application exiting with code 17 while PID 1 stays alive, at least three seconds of supervisor lifetime, and clean poweroff. It rejects kernel panics and degraded startup.
-- `zig build test-journal`: creates a private ext4 disk, runs two independent QEMU boots, and extracts the persisted journal with debugfs for host-side verification. Checks actual boot IDs, continued sequence numbers, and `succeeded` / `failed` / `in_flight` reconciliation. Requires `mkfs.ext4`, `debugfs`, OVMF and a kernel with built-in virtio/ext4; the build supplies its static fixture PID 1. This is a clean-reboot persistence test.
-- `zig build test-transition`: strict phase-7 acceptance gate. Requires an instrumented guest fixture; currently exits with an actionable error instead of a false pass.
-- `zig build test-matrix -- --config /path/targets.json --bundle /path/bundle`: boots pinned cloud fixtures, mounts only the bundle read-only, and runs its local `bin/pizza-abi-check` in an otherwise empty tmpfs root. Images and the phase-2 ABI-check binary must be supplied.
+`vm/guest.zig` 通过平台端口选择测试盘、准备文件系统、编辑计划和读取保留文件，公共层
+负责审批调用、准备/重启、导入收据、文件哈希、无关磁盘以及整个批准/原始布局的核对。
+`vm/cases.zig` 统一用例类型、选择校验和 Accept/Undo/断电后的交互；两端宿主提供串口、
+时钟和 VM 生命周期。Linux 保留 QEMU 进程控制，Windows 保留 libvirt/SAC/SCM 适配。
+`vm/common.zig` 提供共用文件、JSON、进程、截止时间和宿主启动标识工具，不属于 Windows。
 
-VM outputs always default to `/tmp/pizza-qemu-*`. Use `KERNEL=/boot/vmlinuz-...`
-and `OVMF_CODE`/`OVMF_VARS` for distro-specific paths. The variable-store file is
-copied per run. No physical disks are attached to a VM. TCG is used to avoid
-depending on `/dev/kvm` permissions. qcow2 inputs remain immutable; writable
-fixtures use overlays/snapshot mode.
+2026-10-30 公共层重构后，三套真实 VM 矩阵全部通过：
 
-`zig build test-bridge` runs the actual local panel with an installed WPE runtime
-in headless mode. It needs a host that permits WebKit subprocess IPC and sandbox
-setup. `zig build test-maintenance -- --bridge --bundle /path/bundle
---kernel-version VERSION` performs the same test inside the real layered RAM-root
-image with the bundled WPE libraries and helper processes. The dedicated VM test
-disables the WebKit sandbox explicitly; production startup does not. It verifies
-all six native methods, the real DOM, and 134 journal records delivered in batches
-of at most 32, followed by the application exiting successfully and PID 1 reaping
-it before poweroff. The RAM journal is a diagnostic fixture, not a production
-persistent home. DRM output and production sandbox behavior need separate checks.
+| 主系统               | 场景 | 原生套件                          | 报告                                            |
+| -------------------- | ---- | --------------------------------- | ----------------------------------------------- |
+| Linux，512 字节扇区  | 5/5  | 129 通过                          | `.zig-cache/shared-e2e/linux-512/results.json`  |
+| Linux，4096 字节扇区 | 5/5  | 129 通过                          | `.zig-cache/shared-e2e/linux-4096/results.json` |
+| Windows 26H2         | 5/5  | 156 通过，1 项 Linux 专属测试跳过 | `.zig-cache/shared-e2e/windows/results.json`    |
 
-An instrumented full-transition guest must combine its bridge results with
-independent transition, RAM-root, journal, root-hash, and memory evidence, and
-print exactly one `PIZZA_ACCEPTANCE_JSON:{...}` line. The phase-7 gate requires
-that evidence; bridge self-test success alone cannot satisfy it.
-
-`qemu/faults.json` enumerates the spec's fault cases. `pizza.fsync_fail_step=N`
-is a proposed clarification because the spec's fsync-failure parameter has no
-step selector. None of the fault paths is marked as passed by the skeleton.
-
-Cloud fixtures belong outside the checkout. Pin an actual image path and SHA-256
-in a private copy of `matrix/targets.json`. RHEL images require the user's
-properly licensed image source. Resolve `fedora-current` to an explicit Fedora
-release/image checksum when running the matrix; never silently retarget an old
-result to a new release.
-
-Maintenance PID 1 normally stays running with `pizza.boot=normal` (the default).
-It mounts only RAM and kernel pseudo filesystems in this phase.
-Startup errors keep PID 1 alive in a degraded state; the VM acceptance test then
-times out rather than treating that state as success. The application hosts its backend and WPE view in one ordinary process. DRM
-display, kexec transition, and Linux 4.18 ABI matrix remain separate milestones.
-The journal layer is tested independently; selecting and mounting its production
-persistent home remains part of the transition integration.
-
-`pizza.*` parsing accepts bare `key=value` tokens. Unknown keys, duplicates,
-malformed values and `pizza.nonce` fail closed without printing their values.
-Supported non-secret options are `plan_id` (ASCII letters/digits/underscore/hyphen,
-up to 128 bytes), `kiosk=enable|disable`,
-`journal=enable|disable|fsync_fail`, and `step_fail`, `step_hang`, `fsync_fail_step`
-(1–20). The future journal/executor settings are only parsed at this stage.
-Secrets require the protected RAM handoff described in the spec clarifications.
-
-Native examples:
-
-```bash
-zig build test-smoke
-zig build test-journal
-zig build bundle -Doptimize=safe
-zig build test-maintenance -- --kernel-version "$(uname -r)"
-zig build test-maintenance -- --bridge --kernel-version "$(uname -r)"
-# Use --kernel /path/to/vmlinuz when it is not in /lib/modules/VERSION/vmlinuz.
-zig build test-transition -- --kernel /tmp/vmlinuz --initrd /tmp/guest.img --root-disk /tmp/root.qcow2 --journal-disk /tmp/journal.qcow2
-zig build test-matrix -- --check-fixtures
-zig build test-smoke -- --help
-zig build test-runners
-```
-
-The transition command requires all four explicit guest inputs and an instrumented
-guest that emits the complete acceptance evidence.
-
-The matrix needs `cloud-localds` and cloud-init-capable UEFI qcow2 guests with
-9p support. It requires no SSH, guest network or host privilege. Override the
-local test binary with `--binary RELATIVE_PATH --binary-arg=ARG` (repeatable;
-the equals form also permits arguments such as `--version`). Choose a
-binary that reports its bundled glibc version and checks its loaded mappings;
-a trivial static program alone does not validate the WPE stack. Matrix output
-records the host kernel/glibc and the exact check command. A passing ABI check
-does not mark the three full-transition targets as complete.
-
-## Journal layer and reporting
-
-`core/maint/journal.zig` and `journal/storage.zig` implement the v1 wire format and
-fsync gate. Unit tests compare an independent Python/zlib golden header, truncate
-and corrupt every byte of a terminal record, reject invalid phases and boot/plan
-boundaries, exercise sequence exhaustion, and inject write/file-fsync/directory-fsync
-failures. A failed append poisons the writer. Reopening a damaged tail refuses to
-append; reads preserve the valid prefix without repairing the file.
-
-The CLI integration test runs the real `pizza transition report --journal PATH`
-against a torn file and checks that its hash stays unchanged. `report` prints
-JSON with decimal-string sequences/timestamps, per-step outcomes, boot/UTC/home
-boundaries, UTF-8 payload text where valid, and hexadecimal payload bytes. Notes
-never hide an unfinished intent. A non-clean `tail` describes the unread suffix;
-`valid_bytes` is the prefix boundary, not a claim that the entire file is valid.
-
-The two-boot fixture mounts only its fresh virtual disk. It does not choose the
-product journal home or resolve the original-root read-only constraint. Its
-`journal.bin`, `journal.raw`, serial logs and `results.json` remain in
-`/tmp/pizza-qemu-journal-*`; use the built `pizza` report command on the extracted
-`journal.bin` to inspect the actual recovered timeline.
-
-## Simulated executor
-
-`zig build test-executor -- --bundle /path/current-bundle --kernel-version VERSION`
-builds the full layered image, then appends a static VM-only PID 1. Only the fresh
-private `/dev/vda` ext4 disk is mounted; the fixture launches the actual dynamic
-`pizza-maint` from the bundle. The success and fsync cases use real headless WPE, observe execution while running,
-and verify the final DOM state is succeeded at 20/20 or degraded at 7/20. Console
-TUI and UI are both consumers of the same executor and committed journal prefix.
-The dedicated VM fixture disables the WPE sandbox, as the bridge fixture does.
-
-Five homes test success, step-8 failure, step-8 hang killed by PID 1, step-8 intent
-fsync failure, and a torn intent header. The second boot checks a different boot
-ID, refuses `--execute` for every existing journal and proves its hash is unchanged.
-Host debugfs extraction and the actual `pizza transition report` verify the stored
-outcomes without changing them. A valid but unacknowledged intent may be present
-after injected fsync failure; recovery conservatively reports it as in flight.
-The live UI uses only the prefix whose fsync returned successfully.
-
-The application accepts an existing caller-selected home on ext4, XFS or Btrfs.
-It rejects volatile/unknown filesystem types and never creates or mounts a home.
-This check does not select a production device or solve the original-root read-only
-constraint. Fault options are explicit CLI options, require `--execute`, and target
-step ordinals 1–20. Normal PID 1 startup does not automatically authorize execution.
-
-## Production kexec and journal handoff
-
-```sh
-zig build test-kexec -- --bundle /path/to/current-bundle \
-  --kernel-version VERSION --output /tmp/pizza-kexec-acceptance
-```
-
-The runner builds a disposable RAM systemd environment, invokes the actual Pizza
-CLI, verifies a real load/unload rollback after a rejected shutdown command, then
-uses ordinary `systemctl kexec` to enter the production PID 1 and maintenance app.
-The app discovers its independent ext4 device by UUID, validates the protected
-plan and durable loaded marker, and runs the simulated plan. A separate boot
-checks completion and the read-only report. The original disk is attached
-read-only and independently hashed before and after the test.
-
-The test never invokes kexec, reboot or host disk mounts on the development host.
-The deliberately rejecting systemctl fixture is used only for the rollback case;
-the successful switch uses the real systemd manager and systemctl. This focused
-suite does not replace the broader `test-transition` acceptance gate, graphics,
-Secure Boot, distro matrix or physical-hardware validation.
-
-The distro compatibility matrix takes an explicitly unpacked `pizza-bundle` raw runtime fixture (`runtime.json`), not the production opaque base-plus-overlay package.
+每套各三次强制断电，保留文件哈希、完整布局和幂等收据均通过；来宾正常关机且 QEMU
+全部退出。汇总、产物摘要及公共源文件摘要见 `.zig-cache/shared-e2e/validation.json`。
+另有宿主 70、协议 3、公共 VM 断言 3 项及配置/下载/串口/CLI 工具回归通过；默认 Linux
+构建与 Windows 维护及公共断言交叉编译通过。

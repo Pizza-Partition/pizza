@@ -1,0 +1,106 @@
+{
+  "source": "/home/perdixky/Documents/ChatGPT/New project 3/native-blend2d",
+  "copied_verbatim": true,
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "5af4b62983a988cea905c1b70595d6843c765f2d20bf4c184f909f688ce8f429",
+      "bytes": 7576
+    },
+    {
+      "path": "assets/fonts/CormorantGaramond-OFL.txt",
+      "sha256": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956",
+      "bytes": 4387
+    },
+    {
+      "path": "assets/fonts/CormorantGaramond.ttf",
+      "sha256": "b20b7d9626dd956b2c5e558692ad328b1f19e3275e2782db4fa07670d83f35e0",
+      "bytes": 1195560
+    },
+    {
+      "path": "assets/fonts/DMSans-OFL.txt",
+      "sha256": "9af36190332437f5ecd09974de43c1f7c77a310a996cdd8ceb25628b458840e1",
+      "bytes": 4482
+    },
+    {
+      "path": "assets/fonts/DMSans.ttf",
+      "sha256": "8cd08d97e89c24d0aa92edd2f0f4c8ee6195eee9b7c9f154865a58b02f0c1c0d",
+      "bytes": 240164
+    },
+    {
+      "path": "output/complete.png",
+      "sha256": "5e4aabb32a402eb2964dafb9d5b372aef76ec5f9ca9b27b37fb26323b6b77045",
+      "bytes": 451402
+    },
+    {
+      "path": "output/toppings/after.png",
+      "sha256": "64b32504ffb6edd1ae4968800d55e0f8639928161b60293ce5108d539713c4dc",
+      "bytes": 557987
+    },
+    {
+      "path": "src/artwork.cpp",
+      "sha256": "2ac34a26f76fdefc942ded73bdead46c23ff6de4fe353715c6a5c3a1f0824549",
+      "bytes": 25890
+    },
+    {
+      "path": "src/artwork.hpp",
+      "sha256": "53631ffb80e58406dcc04af19f7bf21b9b3f078457d458effd959f8eba45a549",
+      "bytes": 1652
+    },
+    {
+      "path": "src/dough.hpp",
+      "sha256": "a358385578325b59c1a9ede8b67fb673829a14141f34a6b5dcf20d82bbe38060",
+      "bytes": 1262
+    },
+    {
+      "path": "src/main.cpp",
+      "sha256": "6d52521def919bbdb5596e4e247af3da6aa705006f3609d3f84c195955b19a4e",
+      "bytes": 14486
+    },
+    {
+      "path": "src/relief.cpp",
+      "sha256": "a2875b8a8e685a25e62db295d359c5563f43da036db99a4a7e0c6f0e21e19ac7",
+      "bytes": 6089
+    },
+    {
+      "path": "src/relief.hpp",
+      "sha256": "a9b9cc841ae89a670e1db8c2a3719a9f652658ef6305355df39049d6c0d6dcb2",
+      "bytes": 1004
+    },
+    {
+      "path": "src/renderer.cpp",
+      "sha256": "bf2b6fe7dbe2610c34d52ef114c8c81ddf0fdc1e3ada0d3ab3649e46df97b891",
+      "bytes": 25977
+    },
+    {
+      "path": "src/renderer.hpp",
+      "sha256": "5b667e3f2d82eac7ea15e9d22ec391a5b4c74f7feb931f8681ffd578732c194f",
+      "bytes": 2249
+    },
+    {
+      "path": "src/reveal.hpp",
+      "sha256": "e4998e95eb853589896aeab66270b5ee8a1d9cda746cfb5955e532de9fdb5f2f",
+      "bytes": 816
+    },
+    {
+      "path": "src/timeline.hpp",
+      "sha256": "4ebb1e1255e8f83349326a8a92062d76baa460cc50bbfc36fafdf54669899cab",
+      "bytes": 3350
+    },
+    {
+      "path": "tests/relief_test.cpp",
+      "sha256": "97ef90e2076a15a11a9ee7171edc4d4bf70edcfedfb8f898fd7f25d7d1db846e",
+      "bytes": 5323
+    },
+    {
+      "path": "tests/timeline_test.cpp",
+      "sha256": "af3e64a1f2c2f323f5b7812153c67a17ba55ffdb61c5a464e44faf6b6fe818e2",
+      "bytes": 3561
+    },
+    {
+      "path": "xmake.lua",
+      "sha256": "87611c2694fb38bdaca2ca71f0754971b1f41f6c2f1a85639ebffd1c30350e3e",
+      "bytes": 3131
+    }
+  ]
+}

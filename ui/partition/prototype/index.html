@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#f8f6ef" />
+    <title>Pizza — A little space, a lot more possibilities.</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/pizza-mark.svg" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="header">
+        <a class="brand" href="#welcome" aria-label="Pizza home"
+          ><span class="brand-mark" aria-hidden="true">✳</span>Pizza<span class="brand-dot"
+            >.</span
+          ></a
+        >
+        <span class="motto">A LITTLE SPACE, A LOT MORE POSSIBILITIES.</span>
+        <div class="header-actions">
+          <button class="text-button" id="help">Help <span aria-hidden="true">↗</span></button>
+        </div>
+      </header>
+      <main id="app"></main>
+      <footer class="footer">
+        <span>THOUGHTFULLY LAYERED. BEAUTIFULLY SIMPLE.</span
+        ><span>Made with a little <i>amore</i></span>
+      </footer>
+    </div>
+    <dialog id="help-dialog">
+      <button class="close-dialog" aria-label="Close help">×</button
+      ><span class="eyebrow">A LITTLE GUIDANCE</span>
+      <h2>Make room for what’s next.</h2>
+      <p>
+        Choose a sample disk, select a pizza slice, then drag a divider on the partition bar to
+        adjust its size. Right-click a bar segment for left / right add, delete and format actions.
+        On touch screens, use the three-dot menu or press and hold a segment.
+      </p>
+      <p>
+        Review the complete plan before executing. Host operations do not provide unified Undo; maintenance Undo restores the state at handoff.
+      </p>
+      <button class="primary close-help">Got it <span>↗</span></button>
+    </dialog>
+    <div class="toast" role="status" aria-live="polite"></div>
+    <script src="/webui.js"></script>
+    <script type="module" src="./bootstrap.js"></script>
+  </body>
+</html>
