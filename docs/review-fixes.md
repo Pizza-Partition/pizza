@@ -45,3 +45,7 @@ evidence. The Windows VM runner now translates the libvirt headers installed alo
 its selected runtime, removing the redundant source download and its stale
 package hash and archive-directory assumptions. CI pins that installation through
 the same dated package snapshot.
+
+The CI container runs with a minimal init process to reap daemonized QEMU
+children. Without it, completed QEMU processes remain zombies and libvirt's
+shutdown cleanup fails before the Windows baseline can be saved.
