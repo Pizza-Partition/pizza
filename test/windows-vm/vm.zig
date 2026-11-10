@@ -168,7 +168,7 @@ pub const Vm = struct {
             "<disk type='file' device='disk'><driver name='qemu' type='raw'/><source file='{s}'/><target dev='sdc' bus='usb' removable='on'/><readonly/></disk>" ++
             "<serial type='pty'><target type='isa-serial' port='0'/></serial><console type='pty'><target type='serial' port='0'/></console>" ++
             "<serial type='pty'><target type='isa-serial' port='1'/><alias name='serial1'/></serial>" ++
-            "<video><model type='virtio' heads='1' primary='yes'/></video><memballoon model='none'/></devices>" ++
+            "<video><model type='vga' heads='1' primary='yes'/></video><memballoon model='none'/></devices>" ++
             // libvirt injects bootindex=1 even without an XML <boot> element.
             // OVMF treats that fw_cfg list as authoritative and deletes the
             // guest-created maintenance entry. Keep boot policy in NVRAM.

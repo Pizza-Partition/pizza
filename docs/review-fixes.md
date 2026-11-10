@@ -49,3 +49,6 @@ the same dated package snapshot.
 The CI container runs with a minimal init process to reap daemonized QEMU
 children. Without it, completed QEMU processes remain zombies and libvirt's
 shutdown cleanup fails before the Windows baseline can be saved.
+The Windows suite uses the same basic VGA device as its installer and checks
+that device before downloading the ISO; it does not require an optional VirtIO
+GPU module absent from the minimal CI QEMU installation.

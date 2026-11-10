@@ -34,6 +34,9 @@ CONFIG
       --accel kvm --sector "$sector" --timeout 900
     ;;
   windows)
+    # The suite and installer both use the basic VGA device, without optional GPU modules.
+    qemu-system-x86_64 -device help > "$out/qemu-devices.log"
+    grep -F 'name "VGA",' "$out/qemu-devices.log"
     "$zig" build build-windows-vm-artifacts -j2 -Dheadless=true -- --out "$out/artifacts"
     "$zig" build fetch-windows-image -j2 -Dheadless=true
     python3 test/vm/fetch-virtio.py "$out/drivers"
