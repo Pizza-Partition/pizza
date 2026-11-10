@@ -22,8 +22,8 @@
             .hash = "clap-0.12.0-oBajB4XpAQCF1WRKnD5KOKPsnwwT_NNdAJ7Ww3irYJac",
         },
         .pizza_maintenance = .{
-            .url = "https://github.com/Pizza-Partition/pizza-maint/releases/download/v0.5.1/pizza-maint-x86_64.tar.gz",
-            .hash = "N-V-__8AAFiNeRxf8CIuc5iNpxre_fh57llqwYTiH1_kw90_",
+            .url = "https://github.com/Pizza-Partition/pizza-maint/releases/download/v0.5.2/pizza-maint-x86_64.tar.gz",
+            .hash = "N-V-__8AAC9HehyP1pezsoCFbheSb8UyIeXg1X0sw5y_GuP7",
         },
         .win32 = .{
             .url = "https://codeload.github.com/marlersoft/zigwin32/tar.gz/6f281fc4a9a6135000ba0f9c6792d0c2b8e7acff",

@@ -33,6 +33,7 @@ const REFUSED = new Set([
   'PlanApprovalChanged',
   'PlanNotExecutable',
   'HostPreflightFailed',
+  'WindowsResizeOutsideSupportedRange',
 ]);
 // The backend reports most failures by name only; say what they mean here.
 const EXPLANATIONS = {
@@ -48,6 +49,16 @@ const EXPLANATIONS = {
   PlanTooLarge: 'The plan has too many partitions.',
   PlanApprovalChanged: 'The disk no longer matches the reviewed plan. Review it again.',
   PlanNotExecutable: 'The plan did not pass the final check. Review it again.',
+  WindowsResizeOutsideSupportedRange:
+    'Windows cannot resize this volume to that size. Refresh the disks and choose a supported size.',
+  InsufficientEspSpace:
+    'The EFI system partition does not have enough free space to stage maintenance.',
+  EspSpaceUnavailable: 'Free space on the EFI system partition could not be checked.',
+  AmbiguousDiskIdentity:
+    'Multiple disks report the same identity. Resolve the duplicate disk identity and refresh.',
+  UnsafeSessionRecord: 'The saved session record failed its security checks.',
+  UnsafeSessionFile: 'The saved session record failed its security checks.',
+  SessionRecordUnavailable: 'The saved session could not be opened. Check administrator access.',
   ExecutionInProgress: 'Another operation is already running.',
   MaintenanceSessionInProgress: 'A maintenance session is still open. Import or cancel it first.',
   AnotherMaintenanceSessionExists:
