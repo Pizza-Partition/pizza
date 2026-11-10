@@ -1,12 +1,12 @@
 .{
     .name = .pizza,
-    .version = "0.5.3",
+    .version = "0.5.4",
     .fingerprint = 0xcfdd826fa2266c7f,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .libvirt_api = .{
             .url = "https://download.libvirt.org/libvirt-12.8.0.tar.xz",
-            .hash = "N-V-__8AADR3NAnorJlWczMXh09Wr3XfsjNa3cDS-iGmb0wW",
+            .hash = "N-V-__8AADR3NAmbbJgNWjiLHYULLjFUKa7utVkC39T5pWSH",
             .lazy = true,
         },
         .zig_webui = .{
@@ -22,8 +22,8 @@
             .hash = "clap-0.12.0-oBajB4XpAQCF1WRKnD5KOKPsnwwT_NNdAJ7Ww3irYJac",
         },
         .pizza_maintenance = .{
-            .url = "https://github.com/Pizza-Partition/pizza-maint/releases/download/v0.5.2/pizza-maint-x86_64.tar.gz",
-            .hash = "N-V-__8AAC9HehyP1pezsoCFbheSb8UyIeXg1X0sw5y_GuP7",
+            .url = "https://github.com/Pizza-Partition/pizza-maint/releases/download/v0.5.3/pizza-maint-x86_64.tar.gz",
+            .hash = "N-V-__8AAE4iehwQI9o0bMmkzBK3hfvxjNI7CAVWJMWMhHwL",
         },
         .win32 = .{
             .url = "https://codeload.github.com/marlersoft/zigwin32/tar.gz/6f281fc4a9a6135000ba0f9c6792d0c2b8e7acff",

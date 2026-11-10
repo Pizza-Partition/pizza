@@ -70,6 +70,7 @@ pub fn inspect() !Status {
     var running = false;
     inline for (NAMES, 0..) |name, index| {
         const state = try service(name, false);
+        if (!state.disabled or state.running) std.debug.print("Baseline service {s}: disabled={}, running={}\n", .{ name, state.disabled, state.running });
         disabled = disabled and state.disabled;
         running = running or state.running;
         if (index == 0) installer = state.running;

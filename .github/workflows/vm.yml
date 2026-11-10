@@ -35,15 +35,21 @@ jobs:
           fi
           mkdir -p .zig-cache
       - name: Rebuild baseline and run all five reboot scenarios
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           VM_SYSTEM: ${{ matrix.system }}
         run: |
+          set -euo pipefail
           docker run --rm --device=/dev/kvm \
             -e GH_TOKEN -e RUNNER_TEMP=/runner-temp -e PIZZA_CI_UID="$(id -u)" \
             -v "$PWD:/work" -v "$RUNNER_TEMP:/runner-temp" -w /work \
             docker.io/library/archlinux:base@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722 \
             bash test/vm/ci-environment.sh "$VM_SYSTEM" 2>&1 | tee ".zig-cache/ci-vm-$VM_SYSTEM.log"
+      - name: Verify complete matrix report on the runner
+        env:
+          VM_SYSTEM: ${{ matrix.system }}
+        run: python3 test/vm/check-results.py ".zig-cache/ci-vm-$VM_SYSTEM/run/results.json"
       - name: Retain acceptance evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -62,3 +68,4 @@ jobs:
             .zig-cache/ci-vm-*/**/*.stdout
             .zig-cache/ci-vm-*/**/*.xml
             .zig-cache/ci-vm-*/**/*.png
+            .zig-cache/ci-vm-*/**/*.ppm

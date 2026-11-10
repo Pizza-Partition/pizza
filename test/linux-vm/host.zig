@@ -300,7 +300,14 @@ const Host = struct {
         defer h.stop();
         try h.boot();
         try h.wait("PZ_LINUX_READY", 0);
-        errdefer h.collect() catch {};
+        errdefer {
+            // A maintenance rescue console cannot answer the primary OS agent.
+            // Keep evidence collection bounded without delaying the real error.
+            const saved_timeout = h.timeout;
+            h.timeout = @min(h.timeout, 15);
+            h.collect() catch {};
+            h.timeout = saved_timeout;
+        }
         if (h.native) try h.guest("native", "accept");
         try h.guest("setup", "accept");
         var cases = std.mem.splitScalar(u8, h.cases, ',');

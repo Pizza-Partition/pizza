@@ -4,6 +4,8 @@
 Windows。每组保留原生套件，以及 accept、undo、powercut-undo、powercut-accept、
 powercut-apply 全部五场景。`check-results.py` 拒绝跳过原生套件、缺少场景或未通过的报告。
 `release.yml` 同时依赖常规 CI 和完整 VM 矩阵；仅编译测试器不满足发布条件。
+记录日志的宿主 shell 显式启用 `pipefail`，容器失败必须传递到 job；容器退出后，
+runner 还会独立检查最终报告，拒绝失败、缺失或不完整的结果。
 
 每组在独立 GitHub-hosted Linux runner 上使用固定摘要的 Arch 容器和 2026/10/30
 软件仓库快照。`ci-environment.sh` 仅在一次性容器中安装工具并切换普通用户；
