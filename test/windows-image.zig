@@ -374,7 +374,7 @@ fn acceptance(geometry: Geometry) !void {
     }
     const data_hash = try writeSentinel(a, part);
     const guard_hash = try writeSentinel(a, try partAt(disk, geometry.guardOffset()));
-    try std.testing.expectError(error.HostPreflightFailed, backend.preflightShrink(a, part, geometry.sector_bytes));
+    try std.testing.expectError(error.WindowsResizeOutsideSupportedRange, backend.preflightShrink(a, part, geometry.sector_bytes));
     var target = desired(part);
     target.name = try a.print("{s}/{s}", .{ initial_label, initial_label });
     try std.testing.expectError(error.InvalidFilesystemLabel, backend.apply(a, disk, .{ .kind = .label, .partition_id = part.id }, target));
