@@ -1,0 +1,23 @@
+{
+  "url": "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.302-1/virtio-win-0.1.302.iso",
+  "files": [
+    {
+      "name": "vioscsi.inf",
+      "offset": 43567104,
+      "size": 3203,
+      "sha256": "847db55c4e39053294c33be9b840be75c083a876e90bbf5067b782b0509832d1"
+    },
+    {
+      "name": "vioscsi.sys",
+      "offset": 44386304,
+      "size": 79000,
+      "sha256": "2affcb67ff2167891f86f97154e247c1179182d21ee47248f0e5e17d18ac6fb9"
+    },
+    {
+      "name": "vioscsi.cat",
+      "offset": 43554816,
+      "size": 12071,
+      "sha256": "65164f7341886268d2165805ad4563b3bdaeee0adac368e0484ce54f8fe6e8fc"
+    }
+  ]
+}

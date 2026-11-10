@@ -8,8 +8,10 @@ permissions:
 jobs:
   tests:
     uses: ./.github/workflows/ci.yml
+  vm-tests:
+    uses: ./.github/workflows/vm.yml
   release:
-    needs: tests
+    needs: [tests, vm-tests]
     runs-on: ubuntu-26.04
     permissions:
       contents: write

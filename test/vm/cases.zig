@@ -42,6 +42,7 @@ pub fn run(vm: anytype, case: []const u8) !usize {
         var decided = false;
         while (vm.now() < until) {
             try vm.pump();
+            if (vm.contains(recovery, "PIZZA_RESTART_FAILED") or vm.contains(recovery, "PIZZA_MAINT_DEGRADED") or vm.contains(recovery, "Kernel panic")) return error.MaintenanceFailed;
             if (vm.contains(recovery, "PIZZA_RESTART_RETURN_READY")) break;
             if (!continued and vm.contains(recovery, "Recovered session. Press C")) {
                 try vm.send("c\n");

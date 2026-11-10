@@ -129,6 +129,10 @@ Update 挂起重启标记和 TrustedInstaller 状态，允许 Windows 完成维�
 这些设置只应用于本次新建的测试系统。`baseline.json` 记录 `updates_disabled` 和维护状态；
 Agent 测试拒绝尚未冻结更新的旧基线，并在每次返回 Windows 时再次核对服务状态。
 
+完整 CI 会从固定 ISO 和 `virtio.json` 锁定的驱动重新制作基线，见
+[`../vm/README.md`](../vm/README.md)。运行时通过 SMBIOS Type 11 选择串口控制台，
+维护 UKI 保持正式发布原件及摘要。
+
 在只读基线上运行全部用例：
 
 ```sh

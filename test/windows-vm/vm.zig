@@ -172,7 +172,10 @@ pub const Vm = struct {
             // libvirt injects bootindex=1 even without an XML <boot> element.
             // OVMF treats that fw_cfg list as authoritative and deletes the
             // guest-created maintenance entry. Keep boot policy in NVRAM.
-            "<qemu:override><qemu:device alias='ua-system'><qemu:frontend><qemu:property name='bootindex' type='remove'/></qemu:frontend></qemu:device></qemu:override></domain>", .{ v.token, code, vars, system, target, v.serial, v.wwn, artifacts });
+            "<qemu:override><qemu:device alias='ua-system'><qemu:frontend><qemu:property name='bootindex' type='remove'/></qemu:frontend></qemu:device></qemu:override>" ++
+            // Select the test console through the firmware interface; never
+            // rebuild or patch the published, digest-bound maintenance UKI.
+            "<qemu:commandline><qemu:arg value='-smbios'/><qemu:arg value='type=11,value=io.systemd.stub.kernel-cmdline-extra=console=ttyS0'/></qemu:commandline></domain>", .{ v.token, code, vars, system, target, v.serial, v.wwn, artifacts });
         try std.Io.Dir.cwd().writeFile(v.io, .{ .sub_path = try v.path("domain.xml"), .data = v.xml });
         try v.save("inputs.json", .{
             .base = v.base,
@@ -250,7 +253,7 @@ pub const Vm = struct {
         const until = v.now() + v.timeout_ms;
         while (v.now() < until) {
             if (v.transcript.contains(start, text)) return;
-            if (v.transcript.contains(start, "PIZZA_RESTART_FAILED") or v.transcript.contains(start, "Kernel panic")) return error.MaintenanceFailed;
+            if (v.transcript.contains(start, "PIZZA_RESTART_FAILED") or v.transcript.contains(start, "PIZZA_MAINT_DEGRADED") or v.transcript.contains(start, "Kernel panic")) return error.MaintenanceFailed;
             try v.pump();
         }
         std.debug.print("Console timeout waiting for {s}\n", .{text});

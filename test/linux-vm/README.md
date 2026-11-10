@@ -33,7 +33,9 @@ zig build test-linux-vm -Dheadless=true -- --help
 制作器从维护运行环境提取工具，再加入与宿主产品匹配的 systemd、libblockdev 插件和
 动态库。主系统使用指定的宿主内核及 initramfs；宿主必须安装维护元数据所指定内核版本的
 FAT/NLS 模块。当前默认路径为 `/boot/vmlinuz-linux`、`/boot/initramfs-linux.img`，
-可通过 `--kernel FILE`、`--initrd FILE` 覆盖。
+可通过 `--kernel FILE`、`--initrd FILE` 覆盖。主系统内核与维护内核版本不同时，
+必须传 `--kernel-version RELEASE`，从宿主安装的该版本目录复制 FAT/NLS 模块；
+主系统版本及内核/initramfs 摘要写入基线。
 
 ```sh
 zig build test-linux-vm -Dheadless=true -- provision \
@@ -54,6 +56,9 @@ OVMF 使用支持 Secure Boot 变量的固件和未注册密钥的变量模板�
 与基线不一致。产品或测试更新后必须制作新基线。
 
 ## 执行完整矩阵
+
+测试通过 SMBIOS Type 11 的 `io.systemd.stub.kernel-cmdline-extra=console=ttyS0`
+选择维护交互串口。维护 UKI 来自锁定依赖，保持原字节和摘要，不为测试重新组装。
 
 每次运行新建 qcow2 系统盘覆盖层、可写 UEFI 变量副本和 4 GiB 目标盘。目标盘通过随机
 serial、WWN、容量和空白布局共同锁定；使用 virtio-scsi，系统盘使用 NVMe。
@@ -99,6 +104,9 @@ QEMU 必须成功退出。
 本矩阵验证 systemd/UEFI/CLI 的 ext4 移动与维护恢复链路；未覆盖桌面提权弹窗、所有
 发行版、其他文件系统或真实硬件。SIGKILL 是虚拟机断电模型，APPLY 是外部观察的阶段
 边界，不表示穷举扇区撕裂、掉写或每条写入指令。
+
+当前完整 CI 与发布门禁见 [`../vm/README.md`](../vm/README.md)。历史通过记录只说明
+当时构建的结果，不能替代当前版本的完整矩阵。
 
 2026-10-30 首轮本地验收（公共层抽取前）：
 

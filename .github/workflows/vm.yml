@@ -1,0 +1,64 @@
+name: Full VM reboot acceptance
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: vm-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  reboot:
+    name: ${{ matrix.system }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        system: [linux-512, linux-4096, windows]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Require KVM and sufficient runner storage
+        env:
+          VM_SYSTEM: ${{ matrix.system }}
+        run: |
+          test -c /dev/kvm || { echo 'This runner does not provide KVM; full VM acceptance cannot run.' >&2; exit 1; }
+          if [[ "$VM_SYSTEM" == windows ]]; then
+            # Only disposable GitHub-hosted runner preinstalls are removed.
+            sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+            test "$(df --output=avail -B1 . | tail -1)" -ge 35000000000
+          fi
+          mkdir -p .zig-cache
+      - name: Rebuild baseline and run all five reboot scenarios
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VM_SYSTEM: ${{ matrix.system }}
+        run: |
+          docker run --rm --device=/dev/kvm \
+            -e GH_TOKEN -e RUNNER_TEMP=/runner-temp -e PIZZA_CI_UID="$(id -u)" \
+            -v "$PWD:/work" -v "$RUNNER_TEMP:/runner-temp" -w /work \
+            docker.io/library/archlinux:base@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722 \
+            bash test/vm/ci-environment.sh "$VM_SYSTEM" 2>&1 | tee ".zig-cache/ci-vm-$VM_SYSTEM.log"
+      - name: Retain acceptance evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vm-${{ matrix.system }}-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: true
+          path: |
+            .zig-cache/ci-vm-packages.txt
+            .zig-cache/ci-vm-*.log
+            .zig-cache/ci-vm-*/**/*.json
+            .zig-cache/ci-vm-*/**/*.jsonl
+            .zig-cache/ci-vm-*/**/*.log
+            .zig-cache/ci-vm-*/**/*.stderr
+            .zig-cache/ci-vm-*/**/*.stdout
+            .zig-cache/ci-vm-*/**/*.xml
+            .zig-cache/ci-vm-*/**/*.png

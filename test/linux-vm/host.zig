@@ -102,7 +102,7 @@ const Host = struct {
         var words = std.mem.tokenizeAny(u8, result.stdout, " \t\r\n");
         while (words.next()) |word| if (std.mem.startsWith(u8, word, "/")) try h.copy(word, try h.rootDest(word));
     }
-    fn provision(h: *Host, maintenance: []const u8, kernel: []const u8, initrd: []const u8, ukify: []const u8) !void {
+    fn provision(h: *Host, maintenance: []const u8, kernel: []const u8, initrd: []const u8, ukify: []const u8, kernel_version_override: ?[]const u8) !void {
         try h.event("provision:extract-maintenance-runtime");
         const root = try h.path("root");
         try std.Io.Dir.cwd().createDir(h.io, root, .default_dir);
@@ -113,16 +113,18 @@ const Host = struct {
         // Bundle root uses absolute /usr links. Always address their in-image destinations.
         _ = try h.command(&.{ "cp", "-a", "/usr/lib/systemd", try h.path("root/opt/pizza/bundle/lib/") }, null);
         _ = try h.command(&.{ "cp", "-a", "/usr/lib/udev", try h.path("root/opt/pizza/bundle/lib/") }, null);
-        _ = try h.command(&.{ "ln", "-s", "opt/pizza/bundle/lib", try h.path("root/lib64") }, null);
+        _ = try h.command(&.{ "ln", "-sfn", "opt/pizza/bundle/lib", try h.path("root/lib64") }, null);
         for ([_][]const u8{ "/usr/lib/systemd/systemd", "/usr/lib/systemd/systemd-executor", "/usr/lib/systemd/systemd-shutdown", "/usr/bin/systemctl", "/usr/bin/udevadm", "/usr/bin/mount", "/usr/bin/umount", "/usr/bin/stty", "/usr/bin/kmod", "/usr/bin/mke2fs", "/usr/bin/mkfs.ext4", "/usr/bin/e2fsck", "/usr/bin/resize2fs", "/usr/bin/tune2fs", "/usr/bin/blkid", "/usr/bin/sfdisk", "/usr/bin/mkfs.vfat", "/usr/bin/systemd-tmpfiles", "/usr/bin/systemd-sysusers", "/usr/bin/journalctl" }) |file| try h.withLibs(file, try h.rootDest(file));
         const metadata = try std.json.parseFromSliceLeaky(struct { kernel_version: []const u8 }, h.a, try std.Io.Dir.cwd().readFileAlloc(h.io, try std.fs.path.join(h.a, &.{ maintenance, "maint.img.pizza.json" }), h.a, .limited(512 * 1024 * 1024)), .{ .ignore_unknown_fields = true });
+        const kernel_version = kernel_version_override orelse metadata.kernel_version;
+        if (kernel_version.len == 0 or std.mem.indexOfAny(u8, kernel_version, "/\\\r\n") != null or std.mem.eql(u8, kernel_version, ".") or std.mem.eql(u8, kernel_version, "..")) return error.InvalidKernelVersion;
         for ([_][]const u8{ "fat", "nls" }) |name| {
-            const dest = try h.path(try h.a.print("root/lib/modules/{s}/kernel/fs", .{metadata.kernel_version}));
+            const dest = try h.path(try h.a.print("root/lib/modules/{s}/kernel/fs", .{kernel_version}));
             try std.Io.Dir.cwd().createDirPath(h.io, dest);
-            _ = try h.command(&.{ "cp", "-a", try h.a.print("/usr/lib/modules/{s}/kernel/fs/{s}", .{ metadata.kernel_version, name }), dest }, null);
+            _ = try h.command(&.{ "cp", "-a", try h.a.print("/usr/lib/modules/{s}/kernel/fs/{s}", .{ kernel_version, name }), dest }, null);
         }
-        for ([_][]const u8{ "modules.builtin", "modules.builtin.modinfo" }) |name| try h.copy(try h.a.print("/usr/lib/modules/{s}/{s}", .{ metadata.kernel_version, name }), try h.path(try h.a.print("root/lib/modules/{s}/{s}", .{ metadata.kernel_version, name })));
-        _ = try h.command(&.{ "depmod", "-b", root, metadata.kernel_version }, null);
+        for ([_][]const u8{ "modules.builtin", "modules.builtin.modinfo" }) |name| try h.copy(try h.a.print("/usr/lib/modules/{s}/{s}", .{ kernel_version, name }), try h.path(try h.a.print("root/lib/modules/{s}/{s}", .{ kernel_version, name })));
+        _ = try h.command(&.{ "depmod", "-b", root, kernel_version }, null);
         // Pin libblockdev's dlopen plugins to the same host build as the product.
         var lib = try std.Io.Dir.cwd().openDir(h.io, "/usr/lib", .{ .iterate = true });
         defer lib.close(h.io);
@@ -144,6 +146,9 @@ const Host = struct {
         try h.write("root/etc/systemd/system/pizza-agent.service", "[Unit]\nDescription=Serial Zig acceptance agent\nAfter=systemd-udevd.service\n[Service]\nType=simple\nExecStartPre=/usr/bin/udevadm trigger --action=add\nExecStartPre=/usr/bin/udevadm settle\nExecStart=/opt/tests/linux-vm-guest --agent\nStandardInput=tty\nStandardOutput=tty\nStandardError=tty\nTTYPath=/dev/ttyS0\nEnvironment=PATH=/usr/sbin:/usr/bin:/sbin:/bin\nEnvironment=LD_LIBRARY_PATH=/opt/pizza/bundle/lib\nTimeoutStopSec=5\n");
         // Consistent /usr paths for the copied host binaries; bundle tools retain their RPATH.
         try h.write("root/etc/ld.so.conf", "/opt/pizza/bundle/lib\n");
+        // The rescue runtime's zram defaults are unrelated to this fixed-RAM
+        // systemd baseline and may require modules absent from the main kernel.
+        try h.write("root/etc/systemd/zram-generator.conf", "");
 
         const esp = try h.path("esp.raw");
         const fs = try h.path("root.raw");
@@ -171,7 +176,7 @@ const Host = struct {
         }
         var baked: [artifacts.len]Artifact = undefined;
         for (artifacts, 0..) |name, i| baked[i] = .{ .name = name, .sha256 = try digest(h.a, h.io, try h.path(try h.a.print("root/opt/tests/{s}", .{name}))) };
-        try h.save("baseline.json", .{ .version = 2, .system_sha256 = try digest(h.a, h.io, system), .code_sha256 = try digest(h.a, h.io, try h.path("OVMF_CODE.fd")), .vars_sha256 = try digest(h.a, h.io, try h.path("OVMF_VARS.fd")), .artifacts = baked, .kernel_sha256 = try digest(h.a, h.io, kernel), .initrd_sha256 = try digest(h.a, h.io, initrd) });
+        try h.save("baseline.json", .{ .version = 2, .system_sha256 = try digest(h.a, h.io, system), .code_sha256 = try digest(h.a, h.io, try h.path("OVMF_CODE.fd")), .vars_sha256 = try digest(h.a, h.io, try h.path("OVMF_VARS.fd")), .artifacts = baked, .kernel_version = kernel_version, .kernel_sha256 = try digest(h.a, h.io, kernel), .initrd_sha256 = try digest(h.a, h.io, initrd) });
         try h.event("provision:ready");
     }
     pub fn powercut(h: *Host) !void {
@@ -190,7 +195,7 @@ const Host = struct {
     }
     pub fn boot(h: *Host) !void {
         h.stop();
-        const args = &.{ "qemu-system-x86_64", "-machine", "q35", "-accel", h.accel, "-cpu", if (std.mem.eql(u8, h.accel, "kvm")) "host" else "max", "-m", "4096", "-smp", "2", "-display", "none", "-monitor", "none", "-serial", "stdio", "-nic", "none", "-drive", try h.a.print("if=pflash,format=raw,readonly=on,file={s}/OVMF_CODE.fd", .{h.base}), "-drive", try h.a.print("if=pflash,format=raw,file={s}/OVMF_VARS.fd", .{h.out}), "-drive", try h.a.print("if=none,id=system,format=qcow2,file={s}/linux.qcow2", .{h.out}), "-device", "nvme,serial=PZ_SYSTEM,drive=system", "-device", "virtio-scsi-pci,id=scsi", "-drive", try h.a.print("if=none,id=target,format=raw,cache=none,file={s}/target.raw", .{h.out}), "-device", try h.a.print("scsi-hd,drive=target,bus=scsi.0,serial={s},wwn=0x{s},logical_block_size={d},physical_block_size={d}", .{ h.serial, h.wwn, h.sector, h.sector }) };
+        const args = &.{ "qemu-system-x86_64", "-machine", "q35", "-accel", h.accel, "-cpu", if (std.mem.eql(u8, h.accel, "kvm")) "host" else "max", "-m", "4096", "-smp", "2", "-display", "none", "-monitor", "none", "-serial", "stdio", "-nic", "none", "-smbios", "type=11,value=io.systemd.stub.kernel-cmdline-extra=console=ttyS0", "-drive", try h.a.print("if=pflash,format=raw,readonly=on,file={s}/OVMF_CODE.fd", .{h.base}), "-drive", try h.a.print("if=pflash,format=raw,file={s}/OVMF_VARS.fd", .{h.out}), "-drive", try h.a.print("if=none,id=system,format=qcow2,file={s}/linux.qcow2", .{h.out}), "-device", "nvme,serial=PZ_SYSTEM,drive=system", "-device", "virtio-scsi-pci,id=scsi", "-drive", try h.a.print("if=none,id=target,format=raw,cache=none,file={s}/target.raw", .{h.out}), "-device", try h.a.print("scsi-hd,drive=target,bus=scsi.0,serial={s},wwn=0x{s},logical_block_size={d},physical_block_size={d}", .{ h.serial, h.wwn, h.sector, h.sector }) };
         try h.save("qemu-argv.json", args);
         h.child = try std.process.spawn(h.io, .{ .argv = args, .stdin = .pipe, .stdout = .{ .file = h.log.? }, .stderr = .{ .file = h.log.? } });
         try h.event("boot");
@@ -209,6 +214,7 @@ const Host = struct {
         const end = std.Io.Clock.awake.now(h.io).toMilliseconds() + h.timeout * 1000;
         while (std.Io.Clock.awake.now(h.io).toMilliseconds() < end) {
             try h.pump();
+            if (h.contains(start, "PIZZA_RESTART_FAILED") or h.contains(start, "PIZZA_MAINT_DEGRADED") or h.contains(start, "Kernel panic")) return error.MaintenanceFailed;
             if (std.mem.indexOf(u8, h.transcript.items[start..], needle) != null) return;
         }
         std.debug.print("Timeout waiting for {s}; see {s}/serial.log\n", .{ needle, h.out });
@@ -313,7 +319,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const args = try init.minimal.args.toSlice(a);
     if (args.len == 1 or (args.len == 2 and std.mem.eql(u8, args[1], "--help"))) {
-        try std.Io.File.stdout().writeStreamingAll(io, "linux-vm provision|run --out NEW_DIR --stage BIN_DIR [--base BASE_DIR] [--maintenance PAYLOAD_DIR --kernel FILE --initrd FILE --ukify FILE] [--sector 512|4096] [--accel kvm|tcg] [--cases accept,undo,powercut-undo,powercut-accept,powercut-apply] [--native run|skip] [--timeout SECONDS]\n");
+        try std.Io.File.stdout().writeStreamingAll(io, "linux-vm provision|run --out NEW_DIR --stage BIN_DIR [--base BASE_DIR] [--maintenance PAYLOAD_DIR --kernel FILE --kernel-version RELEASE --initrd FILE --ukify FILE] [--sector 512|4096] [--accel kvm|tcg] [--cases accept,undo,powercut-undo,powercut-accept,powercut-apply] [--native run|skip] [--timeout SECONDS]\n");
         return;
     }
     var options: std.StringHashMap([]const u8) = .init(a);
@@ -322,7 +328,7 @@ pub fn main(init: std.process.Init) !void {
     while (i < args.len) : (i += 2) {
         if (i + 1 >= args.len or !std.mem.startsWith(u8, args[i], "--")) return error.InvalidArguments;
         var known = false;
-        for ([_][]const u8{ "--out", "--stage", "--base", "--maintenance", "--kernel", "--initrd", "--ukify", "--sector", "--accel", "--cases", "--native", "--timeout" }) |option| if (std.mem.eql(u8, args[i], option)) {
+        for ([_][]const u8{ "--out", "--stage", "--base", "--maintenance", "--kernel", "--kernel-version", "--initrd", "--ukify", "--sector", "--accel", "--cases", "--native", "--timeout" }) |option| if (std.mem.eql(u8, args[i], option)) {
             known = true;
             break;
         };
@@ -352,7 +358,7 @@ pub fn main(init: std.process.Init) !void {
     }
     try std.Io.Dir.cwd().createDir(io, out, .fromMode(0o700));
     if (std.mem.eql(u8, args[1], "provision")) {
-        try h.provision(options.get("--maintenance") orelse return error.MaintenanceRequired, options.get("--kernel") orelse "/boot/vmlinuz-linux", options.get("--initrd") orelse "/boot/initramfs-linux.img", options.get("--ukify") orelse return error.UkifyRequired);
+        try h.provision(options.get("--maintenance") orelse return error.MaintenanceRequired, options.get("--kernel") orelse "/boot/vmlinuz-linux", options.get("--initrd") orelse "/boot/initramfs-linux.img", options.get("--ukify") orelse return error.UkifyRequired, options.get("--kernel-version"));
     } else if (std.mem.eql(u8, args[1], "run")) {
         h.run() catch |err| {
             h.save("results.json", .{ .status = "failed", .err = @errorName(err), .native = h.native, .sector_size = h.sector, .results = h.results.items }) catch {};
