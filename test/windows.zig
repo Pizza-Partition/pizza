@@ -128,5 +128,5 @@ test "durable records are replaced atomically and reject public files" {
     try std.testing.expectError(error.InvalidSession, store.persist("../escape", "{}"));
     const public_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     try temp.dir.writeFile(std.testing.io, .{ .sub_path = public_id ++ ".json", .data = "{}" });
-    try std.testing.expect((try store.read(a, public_id)) == null);
+    try std.testing.expectError(error.UnsafeSessionFile, store.read(a, public_id));
 }
