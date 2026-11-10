@@ -110,7 +110,7 @@ pub fn latest(self: *Store, a: std.mem.Allocator) !?[]const u8 {
     defer a.free(pattern);
     var entry: native.win32.storage.file_system.WIN32_FIND_DATAW = undefined;
     const h = native.kernel32.FindFirstFileW(pattern, &entry);
-    if (h == -1) return null;
+    if (h == -1) return if (native.kernel32.GetLastError() == .ERROR_FILE_NOT_FOUND) null else error.SessionDirectoryUnavailable;
     defer _ = native.kernel32.FindClose(h);
     var newest: u64 = 0;
     var id: ?[64]u8 = null;

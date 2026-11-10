@@ -48,3 +48,19 @@ test "GPT slot preserves holes and refuses corrupt or duplicate identities" {
     info.checksum = std.hash.Crc32.hash(&bytes);
     try std.testing.expectError(error.WindowsPartitionMappingChanged, slot(&bytes, info, &uuid, 20 * 512, 10 * 512));
 }
+
+test "GPT headers require a valid checksum and bounded entry array" {
+    var header: [512]u8 = @splat(0);
+    @memcpy(header[0..8], "EFI PART");
+    std.mem.writeInt(u32, header[8..12], 0x10000, .little);
+    std.mem.writeInt(u32, header[12..16], 92, .little);
+    std.mem.writeInt(u64, header[24..32], 1, .little);
+    std.mem.writeInt(u64, header[72..80], 2, .little);
+    std.mem.writeInt(u32, header[80..84], 128, .little);
+    std.mem.writeInt(u32, header[84..88], 128, .little);
+    std.mem.writeInt(u32, header[16..20], std.hash.Crc32.hash(header[0..92]), .little);
+    try std.testing.expectEqual(@as(usize, 16384), (try table(&header, 512, 1024 * 1024)).bytes);
+    try std.testing.expectError(error.InvalidGpt, table(&header, 512, 4096));
+    header[88] ^= 1;
+    try std.testing.expectError(error.InvalidGpt, table(&header, 512, 1024 * 1024));
+}

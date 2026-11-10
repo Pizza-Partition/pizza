@@ -59,21 +59,32 @@ pub fn read(self: *Store, a: std.mem.Allocator, id: []const u8) !?[]const u8 {
     return readAt(a, dir, id, 0);
 }
 pub fn latest(self: *Store, a: std.mem.Allocator) !?[]const u8 {
-    var buffer: [128]u8 = undefined;
-    const path = self.sessionDirectory(&buffer) catch return null;
-    const dir = libc.opendir(path) orelse return null;
+    const fd = try self.openSessions();
+    const dir = libc.fdopendir(fd) orelse {
+        _ = libc.close(fd);
+        return error.SessionDirectoryUnavailable;
+    };
     defer _ = libc.closedir(dir);
     var newest: libc.struct_timespec = .{ .tv_sec = 0, .tv_nsec = 0 };
     var id: [64]u8 = @splat(0);
     var found = false;
     var count: usize = 0;
-    while (libc.readdir(dir)) |entry| {
+    while (true) {
+        libc.__errno_location().* = 0;
+        const entry = libc.readdir(dir) orelse {
+            if (libc.__errno_location().* != 0) return error.SessionDirectoryUnavailable;
+            break;
+        };
         count += 1;
-        if (count >= 100_000) return null;
+        if (count >= 100_000) return error.TooManySessions;
         const name = std.mem.sliceTo(&entry.*.d_name, 0);
         if (name.len != 69 or !std.mem.endsWith(u8, name, ".json") or !validId(name[0..64])) continue;
         var stat: libc.struct_stat = undefined;
-        if (libc.fstatat(libc.dirfd(dir), name.ptr, &stat, libc.AT_SYMLINK_NOFOLLOW) != 0 or !regular(stat, 0)) continue;
+        if (libc.fstatat(libc.dirfd(dir), name.ptr, &stat, libc.AT_SYMLINK_NOFOLLOW) != 0) {
+            if (libc.__errno_location().* == libc.ENOENT) continue;
+            return error.SessionRecordUnavailable;
+        }
+        if (!regular(stat, 0) or stat.st_nlink != 1 or stat.st_size <= 0 or stat.st_size > MAX_RECORD) return error.UnsafeSessionRecord;
         if (stat.st_mtim.tv_sec > newest.tv_sec or stat.st_mtim.tv_sec == newest.tv_sec and (stat.st_mtim.tv_nsec > newest.tv_nsec or stat.st_mtim.tv_nsec == newest.tv_nsec and std.mem.order(u8, name[0..64], &id) == .gt)) {
             newest = stat.st_mtim;
             @memcpy(&id, name[0..64]);

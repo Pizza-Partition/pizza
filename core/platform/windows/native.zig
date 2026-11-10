@@ -104,7 +104,7 @@ pub fn guid(a: std.mem.Allocator, value: win32.zig.Guid) ![]const u8 {
 }
 pub const Gpt = struct {
     info: @import("../../planning/gpt.zig").Table,
-    bytes: []u8,
+    bytes: []align(4096) u8,
     pub fn deinit(self: Gpt, a: std.mem.Allocator) void {
         a.free(self.bytes);
     }
@@ -116,10 +116,10 @@ fn readDisk(handle: foundation.HANDLE, offset: u64, bytes: []u8) !void {
 }
 pub fn readGpt(a: std.mem.Allocator, handle: foundation.HANDLE, sector: u32, capacity: u64) !Gpt {
     if (sector < 512 or sector > 4096) return error.InvalidGpt;
-    var header: [4096]u8 = undefined;
+    var header: [4096]u8 align(4096) = undefined;
     try readDisk(handle, sector, header[0..sector]);
     const info = try @import("../../planning/gpt.zig").table(header[0..sector], sector, capacity);
-    const bytes = try a.alloc(u8, std.mem.alignForward(usize, info.bytes, sector));
+    const bytes = try a.alignedAlloc(u8, .fromByteUnits(4096), std.mem.alignForward(usize, info.bytes, sector));
     errdefer a.free(bytes);
     if (bytes.len > capacity - info.offset) return error.InvalidGpt;
     try readDisk(handle, info.offset, bytes);
