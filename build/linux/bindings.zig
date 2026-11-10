@@ -7,6 +7,7 @@ const Bindings = @This();
 libc: *std.Build.Module,
 libblockdev: *std.Build.Module,
 libblkid: *std.Build.Module,
+libsystemd: *std.Build.Module,
 gobject: *std.Build.Module,
 
 pub fn init(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.Optimize) Bindings {
@@ -16,6 +17,7 @@ pub fn init(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         \\#include <errno.h>
         \\#include <fcntl.h>
         \\#include <linux/fs.h>
+        \\#include <linux/magic.h>
         \\#include <poll.h>
         \\#include <signal.h>
         \\#include <stdlib.h>
@@ -50,11 +52,15 @@ pub fn init(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         \\#include <blkid/blkid.h>
     );
     blkid.linkSystemLibrary("blkid", .{ .use_pkg_config = .force });
+    const systemd = translate(b, target, optimize, "libsystemd.h",
+        \\#include <systemd/sd-device.h>
+    );
+    systemd.linkSystemLibrary("libsystemd", .{ .use_pkg_config = .force });
     const gobject = translate(b, target, optimize, "gobject.h",
         \\#include <glib-object.h>
     );
     gobject.linkSystemLibrary("gobject-2.0", .{ .use_pkg_config = .force });
-    return .{ .libc = libc.createModule(), .libblockdev = blockdev.createModule(), .libblkid = blkid.createModule(), .gobject = gobject.createModule() };
+    return .{ .libc = libc.createModule(), .libblockdev = blockdev.createModule(), .libblkid = blkid.createModule(), .libsystemd = systemd.createModule(), .gobject = gobject.createModule() };
 }
 
 /// Backend dependencies; desktop consumers add GObject separately.
@@ -62,6 +68,7 @@ pub fn addTo(self: Bindings, module: *std.Build.Module) void {
     module.addImport("libc", self.libc);
     module.addImport("libblockdev", self.libblockdev);
     module.addImport("libblkid", self.libblkid);
+    module.addImport("libsystemd", self.libsystemd);
 }
 
 fn translate(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.Optimize, name: []const u8, source: []const u8) *std.Build.Step.TranslateC {

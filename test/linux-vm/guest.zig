@@ -1,17 +1,17 @@
 //! Linux guest acceptance uses the built product CLI on a serial-bound test disk.
 const std = @import("std");
-const u = @import("vm_common");
+const vm_common = @import("vm_common");
 const proto = @import("proto");
-const w = proto.wire;
+const wire = proto.wire;
 const editor = @import("core/planning/editor.zig");
-const c = @import("libc");
+const libc = @import("libc");
 const shared = @import("shared_guest.zig");
 const Guest = shared.Guest(Platform);
 const MIB = 1024 * 1024;
 const Platform = struct {
     pub const extension = "";
     pub const test_dir = "linux-tests";
-    pub fn target(g: Guest, s: w.InventorySnapshot) !w.HostDisk {
+    pub fn target(g: Guest, s: wire.InventorySnapshot) !wire.HostDisk {
         const device_path = try Platform.device(g);
         for (s.disks) |d| if (std.mem.eql(u8, d.path, device_path)) {
             if (try proto.byteCount(d.capacity) != 4 * 1024 * MIB or d.read_only or d.identity == null) return error.ForeignDiskRejected;
@@ -30,15 +30,15 @@ const Platform = struct {
         if (!std.mem.eql(u8, serial, g.serial) or !std.mem.eql(u8, wwid, try g.a.print("naa.{s}", .{g.wwn}))) return error.ForeignDiskRejected;
         return "/dev/sda";
     }
-    pub fn fileHash(g: Guest, d: w.HostDisk) ![]const u8 {
+    pub fn fileHash(g: Guest, d: wire.HostDisk) ![]const u8 {
         for (d.partitions) |p| if (p.filesystem == .ext4) {
             _ = try g.program("mount-read", &.{ "/usr/bin/mount", "-o", "ro", p.path orelse return error.VolumeMissing, "/mnt/keep" }, null);
             defer {
-                _ = u.runAt(g.a, g.io, null, .inherit, &.{ "/usr/bin/umount", "/mnt/keep" }, null, 30) catch {};
+                _ = vm_common.runAt(g.a, g.io, null, .inherit, &.{ "/usr/bin/umount", "/mnt/keep" }, null, 30) catch {};
             }
             const bytes = try std.Io.Dir.cwd().readFileAlloc(g.io, "/mnt/keep/pizza-sentinel.bin", g.a, .limited(512 * 1024 * 1024));
             if (bytes.len != 2 * MIB) return error.SentinelSizeChanged;
-            return g.a.dupe(u8, &u.hash(bytes));
+            return g.a.dupe(u8, &vm_common.hash(bytes));
         };
         return error.SentinelMissing;
     }
@@ -60,7 +60,7 @@ const Platform = struct {
     }
     pub fn edit(g: Guest, request: *editor.Request, initial: editor.Result) !editor.Result {
         const result = initial;
-        const parts = try g.a.dupe(w.DesiredPartition, result.draft.layout);
+        const parts = try g.a.dupe(wire.DesiredPartition, result.draft.layout);
         for (parts) |*p| if (p.filesystem == .ext4) {
             p.offset = try g.a.print("{d}", .{try proto.byteCount(p.offset) + 64 * MIB});
         };
@@ -76,7 +76,7 @@ fn sysText(a: std.mem.Allocator, io: std.Io, path: []const u8) ![]const u8 {
     var reader = f.readerStreaming(io, &buffer);
     return std.mem.trim(u8, try reader.interface.allocRemaining(a, .limited(4096)), " \r\n\t");
 }
-const Request = struct { id: u32, action: enum { setup, native, plan, prepare, reboot, verify, collect, shutdown }, serial: []const u8, wwn: []const u8, case: u.cases.Case };
+const Request = struct { id: u32, action: enum { setup, native, plan, prepare, reboot, verify, collect, shutdown }, serial: []const u8, wwn: []const u8, case: vm_common.cases.Case };
 extern "c" fn tcdrain(fd: c_int) c_int;
 fn serialWrite(io: std.Io, bytes: []const u8) !void {
     var at: usize = 0;
@@ -92,9 +92,9 @@ pub fn main(init: std.process.Init) !void {
     const a = init.arena.allocator();
     const io = init.io;
     const args = try init.minimal.args.toSlice(a);
-    if (c.geteuid() != 0) return error.RootRequired;
+    if (libc.geteuid() != 0) return error.RootRequired;
     if (args.len == 2 and std.mem.eql(u8, args[1], "--agent")) {
-        _ = try u.check(try u.runAt(a, io, null, .inherit, &.{ "/usr/bin/stty", "-F", "/dev/ttyS0", "raw", "-echo" }, null, 30));
+        _ = try vm_common.check(try vm_common.runAt(a, io, null, .inherit, &.{ "/usr/bin/stty", "-F", "/dev/ttyS0", "raw", "-echo" }, null, 30));
         var buf: [4096]u8 = undefined;
         var reader = std.Io.File.stdin().readerStreaming(io, &buf);
         try std.Io.File.stdout().writeStreamingAll(io, "PZ_LINUX_READY\n");
@@ -105,7 +105,7 @@ pub fn main(init: std.process.Init) !void {
             const r = try std.json.parseFromSliceLeaky(Request, a, line, .{});
             if (r.serial.len != 19 or r.wwn.len != 16 or !std.mem.startsWith(u8, r.serial, "PZ-E2E-") or !std.mem.startsWith(u8, r.wwn, "5001") or !std.mem.eql(u8, r.serial[7..], r.wwn[4..])) return error.InvalidTarget;
             for (r.serial[7..]) |ch| if (!std.ascii.isHex(ch)) return error.InvalidTarget;
-            const result = try u.runAt(a, io, null, .inherit, &.{ "/opt/tests/linux-vm-guest", @tagName(r.action), r.serial, r.wwn, @tagName(r.case) }, null, 600);
+            const result = try vm_common.runAt(a, io, null, .inherit, &.{ "/opt/tests/linux-vm-guest", @tagName(r.action), r.serial, r.wwn, @tagName(r.case) }, null, 600);
             try serialWrite(io, try a.print("PZ_LINUX:{s}\n", .{try std.json.Stringify.valueAlloc(a, .{ .id = r.id, .ok = result.term.success(), .stdout = result.stdout, .stderr = result.stderr }, .{})}));
         }
     }
@@ -124,7 +124,7 @@ pub fn main(init: std.process.Init) !void {
     } else if (std.mem.eql(u8, action, "verify")) try g.verify() else if (std.mem.eql(u8, action, "collect")) {
         try g.collect();
     } else if (std.mem.eql(u8, action, "shutdown")) {
-        _ = try u.check(try u.runAt(a, io, null, .inherit, &.{ "/usr/bin/systemctl", "--no-block", "poweroff" }, null, 30));
+        _ = try vm_common.check(try vm_common.runAt(a, io, null, .inherit, &.{ "/usr/bin/systemctl", "--no-block", "poweroff" }, null, 30));
     } else return error.InvalidAction;
     try std.Io.File.stdout().writeStreamingAll(io, "{\"ok\":true}\n");
 }

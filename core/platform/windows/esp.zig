@@ -2,7 +2,7 @@
 //! mountvol, BCD commands, arbitrary paths or raw writes to a Windows disk.
 const std = @import("std");
 const proto = @import("proto");
-const n = @import("native.zig");
+const native = @import("native.zig");
 const boot = @import("../../boot/session.zig");
 const staging = @import("../../boot/staging.zig");
 const filename = staging.filename;
@@ -21,7 +21,7 @@ pub const Esp = struct {
     volume: []const u8,
     directory: []const u8,
     relative: []const u8,
-    directories: [11]?n.f.HANDLE = @splat(null),
+    directories: [11]?native.foundation.HANDLE = @splat(null),
 
     /// Discovery and creation are separate from boot arming. Call reserve() for
     /// EVERY file before the offline compiler captures its FAT allocation proof.
@@ -30,19 +30,19 @@ pub const Esp = struct {
         if (!@import("../../execution/worker.zig").validId(session)) return error.InvalidSession;
         if (disk.read_only or !std.mem.eql(u8, disk.partition_table orelse "", "gpt") or
             !std.mem.eql(u8, part.type_guid orelse "", ESP_TYPE)) return error.EspRequired;
-        const handle = try n.open(a, disk.path, n.GENERIC_READ);
-        defer n.close(handle);
-        const number = try n.deviceNumber(handle);
+        const handle = try native.open(a, disk.path, native.GENERIC_READ);
+        defer _ = native.kernel32.CloseHandle(handle);
+        const number = try native.deviceNumber(handle);
         const uuid = try identity.guid(part.partition_uuid orelse return error.MissingPartitionIdentity);
         const id = try proto.hexDigest(disk.identity orelse return error.MissingDiskIdentity);
-        const native_id = try n.maintenanceIdentity(a, handle) orelse return error.NonPortableDeviceIdentity;
+        const native_id = try native.maintenanceIdentity(a, handle) orelse return error.NonPortableDeviceIdentity;
         if (!std.mem.eql(u8, &native_id, &id)) return error.DeviceIdentityChanged;
         const offset = try proto.byteCount(part.offset);
         const length = try proto.byteCount(part.length);
         const volume = try findVolume(a, number, offset, length);
         var fs: [32:0]u16 = @splat(0);
-        if (n.k.GetVolumeInformationW(try n.wide(a, volume), null, 0, null, null, null, &fs, fs.len) == 0 or
-            !std.mem.eql(u16, std.mem.sliceTo(&fs, 0), n.wideLiteral("FAT32"))) return error.Fat32EspRequired;
+        if (native.kernel32.GetVolumeInformationW(try native.wide(a, volume), null, 0, null, null, null, &fs, fs.len) == 0 or
+            !std.mem.eql(u16, std.mem.sliceTo(&fs, 0), native.wideLiteral("FAT32"))) return error.Fat32EspRequired;
         var self: Esp = .{ .a = a, .disk_path = disk.path, .disk_identity = id, .session_id = try proto.hexDigest(session), .disk_number = number, .partition_uuid = uuid, .offset = offset, .length = length, .volume = volume, .directory = volume, .relative = "", .directories = @splat(null) };
         errdefer self.close(io);
         try self.verifyMapping();
@@ -53,7 +53,7 @@ pub const Esp = struct {
             current_path = try a.print("{s}\\{s}", .{ current_path, segment });
             try relative.append(a, '\\');
             try relative.appendSlice(a, segment);
-            if (create and n.k.CreateDirectoryW(try n.wide(a, current_path), null) == 0 and n.k.GetLastError() != .ERROR_ALREADY_EXISTS) return error.EspDirectoryUnavailable;
+            if (create and native.kernel32.CreateDirectoryW(try native.wide(a, current_path), null) == 0 and native.kernel32.GetLastError() != .ERROR_ALREADY_EXISTS) return error.EspDirectoryUnavailable;
             self.directories[index + 1] = try directory(a, current_path);
         }
         self.directory = current_path;
@@ -62,7 +62,7 @@ pub const Esp = struct {
     }
     pub fn close(self: *Esp, _: std.Io) void {
         for (&self.directories) |*handle| {
-            if (handle.*) |h| n.close(h);
+            if (handle.*) |h| _ = native.kernel32.CloseHandle(h);
             handle.* = null;
         }
     }
@@ -80,29 +80,30 @@ pub const Esp = struct {
         for ([_]boot.File{ .image, .manifest, .anchor }) |file| {
             const target = try self.path(file);
             defer self.a.free(target);
-            const h = n.valid(n.k.CreateFileW(target, @bitCast(n.GENERIC_READ | 0x00010000), .{}, null, .OPEN_EXISTING, .{ .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null)) orelse {
-                if (n.k.GetLastError() == .ERROR_FILE_NOT_FOUND) continue;
+            const h = native.kernel32.CreateFileW(target, @bitCast(native.GENERIC_READ | @as(u32, @bitCast(native.fs.DELETE))), .{}, null, .OPEN_EXISTING, .{ .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null);
+            if (h == native.foundation.INVALID_HANDLE_VALUE) {
+                if (native.kernel32.GetLastError() == .ERROR_FILE_NOT_FOUND) continue;
                 return error.EspCleanupFailed;
-            };
-            defer n.close(h);
+            }
+            defer _ = native.kernel32.CloseHandle(h);
             try regular(h);
-            var disposition: n.fs.FILE_DISPOSITION_INFO = .{ .DeleteFile = 1 };
-            if (n.k.SetFileInformationByHandle(h, .FileDispositionInfo, &disposition, @sizeOf(@TypeOf(disposition))) == 0) return error.EspCleanupFailed;
+            var disposition: native.fs.FILE_DISPOSITION_INFO = .{ .DeleteFile = 1 };
+            if (native.kernel32.SetFileInformationByHandle(h, .FileDispositionInfo, &disposition, @sizeOf(@TypeOf(disposition))) == 0) return error.EspCleanupFailed;
         }
-        const volume = try n.open(self.a, std.mem.trimEnd(u8, self.volume, "\\"), n.GENERIC_WRITE);
-        defer n.close(volume);
-        if (n.k.FlushFileBuffers(volume) == 0) return error.EspSyncFailed;
+        const volume = try native.open(self.a, std.mem.trimEnd(u8, self.volume, "\\"), native.GENERIC_WRITE);
+        defer _ = native.kernel32.CloseHandle(volume);
+        if (native.kernel32.FlushFileBuffers(volume) == 0) return error.EspSyncFailed;
     }
     fn verifyMapping(self: *Esp) !void {
         var arena: std.heap.ArenaAllocator = .init(self.a);
         defer arena.deinit();
         const a = arena.allocator();
-        const disk = try n.open(a, self.disk_path, n.GENERIC_READ);
-        defer n.close(disk);
-        if (try n.deviceNumber(disk) != self.disk_number) return error.DeviceIdentityChanged;
-        const id = try n.maintenanceIdentity(a, disk) orelse return error.NonPortableDeviceIdentity;
+        const disk = try native.open(a, self.disk_path, native.GENERIC_READ);
+        defer _ = native.kernel32.CloseHandle(disk);
+        if (try native.deviceNumber(disk) != self.disk_number) return error.DeviceIdentityChanged;
+        const id = try native.maintenanceIdentity(a, disk) orelse return error.NonPortableDeviceIdentity;
         if (!std.mem.eql(u8, &id, &self.disk_identity)) return error.DeviceIdentityChanged;
-        const layout = try n.readLayout(a, disk);
+        const layout = try native.readLayout(a, disk);
         defer layout.deinit(a);
         var matches: usize = 0;
         for (layout.entries) |part| {
@@ -113,12 +114,12 @@ pub const Esp = struct {
                 !std.mem.eql(u8, std.mem.asBytes(&part.Anonymous.Gpt.PartitionType), &try identity.guid(ESP_TYPE))) return error.EspPartitionChanged;
             matches += 1;
         }
-        if (matches != 1 or !n.simpleVolume(a, self.volume, self.disk_number, self.offset, self.length)) return error.EspMappingChanged;
+        if (matches != 1 or !native.simpleVolume(a, self.volume, self.disk_number, self.offset, self.length)) return error.EspMappingChanged;
     }
     fn path(self: *Esp, file: boot.File) ![:0]const u16 {
         const text = try self.a.print("{s}\\{s}", .{ self.directory, filename(file) });
         defer self.a.free(text);
-        return n.wide(self.a, text);
+        return native.wide(self.a, text);
     }
     /// Write every byte; setting a sparse EOF is not a capacity reservation.
     /// Existing files are never truncated or reused by this operation.
@@ -127,8 +128,17 @@ pub const Esp = struct {
         try self.verifyMapping();
         const target = try self.path(file);
         defer self.a.free(target);
-        const h = n.valid(n.k.CreateFileW(target, @bitCast(n.GENERIC_READ | n.GENERIC_WRITE), .{}, null, .CREATE_NEW, .{ .FILE_FLAG_WRITE_THROUGH = 1, .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null)) orelse return error.StageReservationFailed;
-        defer n.close(h);
+        const h = native.kernel32.CreateFileW(target, @bitCast(native.GENERIC_READ | native.GENERIC_WRITE), .{}, null, .CREATE_NEW, .{ .FILE_FLAG_WRITE_THROUGH = 1, .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null);
+        if (h == native.foundation.INVALID_HANDLE_VALUE) return error.StageReservationFailed;
+        var closed = false;
+        defer if (!closed) {
+            _ = native.kernel32.CloseHandle(h);
+        };
+        errdefer {
+            _ = native.kernel32.CloseHandle(h);
+            closed = true;
+            if (native.kernel32.DeleteFileW(target) == 0) std.log.err("Cannot delete partial ESP reservation", .{});
+        }
         var left = bytes;
         const zero: [65536]u8 = @splat(0);
         while (left != 0) {
@@ -141,26 +151,47 @@ pub const Esp = struct {
     }
     /// Preparation retries may reuse a reservation of exactly the same size.
     /// The controller forbids this operation after installing a firmware pin.
+    pub fn ensureCapacity(self: *Esp, sizes: [5]u64) !void {
+        var required: u64 = 1024 * 1024;
+        const files = [_]boot.File{ .image, .request, .manifest, .anchor, .receipt };
+        for (files, sizes) |file, bytes| {
+            const target = try self.path(file);
+            defer self.a.free(target);
+            const h = native.kernel32.CreateFileW(target, @bitCast(native.GENERIC_READ), .{ .READ = 1 }, null, .OPEN_EXISTING, .{ .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null);
+            if (h == native.foundation.INVALID_HANDLE_VALUE) {
+                if (native.kernel32.GetLastError() != .ERROR_FILE_NOT_FOUND) return error.StageReservationFailed;
+                required = try std.math.add(u64, required, std.mem.alignForward(u64, bytes, 65536));
+            } else {
+                defer _ = native.kernel32.CloseHandle(h);
+                try regular(h);
+                if (try fileSize(h) != bytes) return error.StageReservationSizeChanged;
+            }
+        }
+        var available: native.foundation.ULARGE_INTEGER = .{ .QuadPart = 0 };
+        if (native.kernel32.GetDiskFreeSpaceExW(try native.wide(self.a, self.volume), &available, null, null) == 0) return error.EspSpaceUnavailable;
+        if (available.QuadPart < required) return error.InsufficientEspSpace;
+    }
     pub fn ensureReserved(self: *Esp, file: boot.File, bytes: u64) !void {
         if (bytes == 0 or bytes > limit(file)) return error.InvalidStageReservation;
         try self.verifyMapping();
         const target = try self.path(file);
         defer self.a.free(target);
-        const h = n.valid(n.k.CreateFileW(target, @bitCast(n.GENERIC_READ), .{}, null, .OPEN_EXISTING, .{ .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null)) orelse {
-            if (n.k.GetLastError() == .ERROR_FILE_NOT_FOUND) return self.reserve(file, bytes);
+        const h = native.kernel32.CreateFileW(target, @bitCast(native.GENERIC_READ), .{}, null, .OPEN_EXISTING, .{ .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null);
+        if (h == native.foundation.INVALID_HANDLE_VALUE) {
+            if (native.kernel32.GetLastError() == .ERROR_FILE_NOT_FOUND) return self.reserve(file, bytes);
             return error.StageReservationFailed;
-        };
-        defer n.close(h);
+        }
+        defer _ = native.kernel32.CloseHandle(h);
         try regular(h);
         if (try fileSize(h) != bytes) return error.StageReservationSizeChanged;
     }
-    fn flush(self: *Esp, file: n.f.HANDLE) !void {
-        if (n.k.FlushFileBuffers(file) == 0) return error.EspSyncFailed;
+    fn flush(self: *Esp, file: native.foundation.HANDLE) !void {
+        if (native.kernel32.FlushFileBuffers(file) == 0) return error.EspSyncFailed;
         // Directory handles cannot reliably be flushed on Windows. Flush the
         // admitted FAT volume so allocation and directory entries persist too.
-        const volume = try n.open(self.a, std.mem.trimEnd(u8, self.volume, "\\"), n.GENERIC_WRITE);
-        defer n.close(volume);
-        if (n.k.FlushFileBuffers(volume) == 0) return error.EspSyncFailed;
+        const volume = try native.open(self.a, std.mem.trimEnd(u8, self.volume, "\\"), native.GENERIC_WRITE);
+        defer _ = native.kernel32.CloseHandle(volume);
+        if (native.kernel32.FlushFileBuffers(volume) == 0) return error.EspSyncFailed;
     }
     fn publish(ctx: *anyopaque, _: std.Io, file: boot.File, bytes: []const u8) !void {
         const self: *Esp = @ptrCast(@alignCast(ctx));
@@ -168,8 +199,9 @@ pub const Esp = struct {
         try self.verifyMapping();
         const target = try self.path(file);
         defer self.a.free(target);
-        const h = n.valid(n.k.CreateFileW(target, @bitCast(n.GENERIC_READ | n.GENERIC_WRITE), .{}, null, .OPEN_EXISTING, .{ .FILE_FLAG_WRITE_THROUGH = 1, .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null)) orelse return error.StageNotReserved;
-        defer n.close(h);
+        const h = native.kernel32.CreateFileW(target, @bitCast(native.GENERIC_READ | native.GENERIC_WRITE), .{}, null, .OPEN_EXISTING, .{ .FILE_FLAG_WRITE_THROUGH = 1, .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null);
+        if (h == native.foundation.INVALID_HANDLE_VALUE) return error.StageNotReserved;
+        defer _ = native.kernel32.CloseHandle(h);
         try regular(h);
         // Reallocation or rename would invalidate the authenticated FAT proof.
         if (try fileSize(h) != bytes.len) return error.StageReservationSizeChanged;
@@ -181,11 +213,12 @@ pub const Esp = struct {
         try self.verifyMapping();
         const target = try self.path(file);
         defer self.a.free(target);
-        const h = n.valid(n.k.CreateFileW(target, @bitCast(n.GENERIC_READ), .{ .READ = 1 }, null, .OPEN_EXISTING, .{ .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null)) orelse {
-            if (n.k.GetLastError() == .ERROR_FILE_NOT_FOUND) return null;
+        const h = native.kernel32.CreateFileW(target, @bitCast(native.GENERIC_READ), .{ .READ = 1 }, null, .OPEN_EXISTING, .{ .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null);
+        if (h == native.foundation.INVALID_HANDLE_VALUE) {
+            if (native.kernel32.GetLastError() == .ERROR_FILE_NOT_FOUND) return null;
             return error.StagedArtifactUnavailable;
-        };
-        defer n.close(h);
+        }
+        defer _ = native.kernel32.CloseHandle(h);
         try regular(h);
         const size = try fileSize(h);
         if (size == 0 or size > limit(file)) return error.StagedArtifactTooLarge;
@@ -194,55 +227,56 @@ pub const Esp = struct {
         var offset: usize = 0;
         while (offset < bytes.len) {
             var count: u32 = 0;
-            if (n.k.ReadFile(h, bytes[offset..].ptr, @intCast(@min(bytes.len - offset, 65536)), &count, null) == 0 or count == 0) return error.StagedArtifactReadFailed;
+            if (native.kernel32.ReadFile(h, bytes[offset..].ptr, @intCast(@min(bytes.len - offset, 65536)), &count, null) == 0 or count == 0) return error.StagedArtifactReadFailed;
             offset += count;
         }
         return staging.decode(a, file, bytes, self.session_id, self.disk_identity);
     }
 };
 
-fn directory(a: std.mem.Allocator, path: []const u8) !n.f.HANDLE {
-    const h = n.valid(n.k.CreateFileW(try n.wide(a, path), @bitCast(n.GENERIC_READ), .{ .READ = 1, .WRITE = 1 }, null, .OPEN_EXISTING, .{ .FILE_FLAG_BACKUP_SEMANTICS = 1, .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null)) orelse return error.EspDirectoryUnavailable;
-    errdefer n.close(h);
-    var info: n.fs.BY_HANDLE_FILE_INFORMATION = undefined;
-    if (n.k.GetFileInformationByHandle(h, &info) == 0) return error.EspDirectoryUnavailable;
-    const flags: n.fs.FILE_FLAGS_AND_ATTRIBUTES = @bitCast(info.dwFileAttributes);
+fn directory(a: std.mem.Allocator, path: []const u8) !native.foundation.HANDLE {
+    const h = native.kernel32.CreateFileW(try native.wide(a, path), @bitCast(native.GENERIC_READ), .{ .READ = 1, .WRITE = 1 }, null, .OPEN_EXISTING, .{ .FILE_FLAG_BACKUP_SEMANTICS = 1, .FILE_FLAG_OPEN_REPARSE_POINT = 1 }, null);
+    if (h == native.foundation.INVALID_HANDLE_VALUE) return error.EspDirectoryUnavailable;
+    errdefer _ = native.kernel32.CloseHandle(h);
+    var info: native.fs.BY_HANDLE_FILE_INFORMATION = undefined;
+    if (native.kernel32.GetFileInformationByHandle(h, &info) == 0) return error.EspDirectoryUnavailable;
+    const flags: native.fs.FILE_FLAGS_AND_ATTRIBUTES = @bitCast(info.dwFileAttributes);
     if (flags.FILE_ATTRIBUTE_REPARSE_POINT != 0 or flags.FILE_ATTRIBUTE_DIRECTORY == 0) return error.UnsafeEspDirectory;
     return h;
 }
-fn regular(h: n.f.HANDLE) !void {
-    var info: n.fs.BY_HANDLE_FILE_INFORMATION = undefined;
-    if (n.k.GetFileInformationByHandle(h, &info) == 0 or info.nNumberOfLinks != 1) return error.UnsafeEspFile;
-    const flags: n.fs.FILE_FLAGS_AND_ATTRIBUTES = @bitCast(info.dwFileAttributes);
+fn regular(h: native.foundation.HANDLE) !void {
+    var info: native.fs.BY_HANDLE_FILE_INFORMATION = undefined;
+    if (native.kernel32.GetFileInformationByHandle(h, &info) == 0 or info.nNumberOfLinks != 1) return error.UnsafeEspFile;
+    const flags: native.fs.FILE_FLAGS_AND_ATTRIBUTES = @bitCast(info.dwFileAttributes);
     if (flags.FILE_ATTRIBUTE_REPARSE_POINT != 0 or flags.FILE_ATTRIBUTE_SPARSE_FILE != 0 or flags.FILE_ATTRIBUTE_COMPRESSED != 0 or flags.FILE_ATTRIBUTE_DIRECTORY != 0) return error.UnsafeEspFile;
 }
-fn fileSize(h: n.f.HANDLE) !u64 {
-    var size: n.win32.foundation.LARGE_INTEGER = undefined;
-    if (n.k.GetFileSizeEx(h, &size) == 0 or size.QuadPart < 0) return error.InvalidEspFileSize;
+fn fileSize(h: native.foundation.HANDLE) !u64 {
+    var size: native.win32.foundation.LARGE_INTEGER = undefined;
+    if (native.kernel32.GetFileSizeEx(h, &size) == 0 or size.QuadPart < 0) return error.InvalidEspFileSize;
     return @intCast(size.QuadPart);
 }
-fn writeAll(h: n.f.HANDLE, bytes: []const u8) !void {
+fn writeAll(h: native.foundation.HANDLE, bytes: []const u8) !void {
     var offset: usize = 0;
     while (offset < bytes.len) {
         var count: u32 = 0;
-        if (n.k.WriteFile(h, bytes[offset..].ptr, @intCast(@min(bytes.len - offset, 65536)), &count, null) == 0 or count == 0) return error.EspWriteFailed;
+        if (native.kernel32.WriteFile(h, bytes[offset..].ptr, @intCast(@min(bytes.len - offset, 65536)), &count, null) == 0 or count == 0) return error.EspWriteFailed;
         offset += count;
     }
 }
 fn findVolume(a: std.mem.Allocator, number: u32, offset: u64, length: u64) ![]const u8 {
     var buffer: [1024:0]u16 = @splat(0);
-    const search = n.k.FindFirstVolumeW(&buffer, buffer.len);
+    const search = native.kernel32.FindFirstVolumeW(&buffer, buffer.len);
     if (search == -1) return error.EspVolumeNotFound;
-    defer _ = n.k.FindVolumeClose(search);
+    defer _ = native.kernel32.FindVolumeClose(search);
     var found: ?[]const u8 = null;
     while (true) {
         const volume = try std.unicode.utf16LeToUtf8Alloc(a, std.mem.sliceTo(&buffer, 0));
-        if (n.simpleVolume(a, volume, number, offset, length)) {
+        if (native.simpleVolume(a, volume, number, offset, length)) {
             if (found != null) return error.AmbiguousEspVolume;
             found = volume;
         }
-        if (n.k.FindNextVolumeW(search, &buffer, buffer.len) == 0) {
-            if (n.k.GetLastError() != .ERROR_NO_MORE_FILES) return error.EspVolumeEnumerationFailed;
+        if (native.kernel32.FindNextVolumeW(search, &buffer, buffer.len) == 0) {
+            if (native.kernel32.GetLastError() != .ERROR_NO_MORE_FILES) return error.EspVolumeEnumerationFailed;
             break;
         }
     }

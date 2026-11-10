@@ -1,7 +1,7 @@
 //! Real libblockdev calls, exclusively against private temporary regular files.
 //! This does not qualify kernel partition updates or replace VM acceptance.
 const std = @import("std");
-const c = @import("libc");
+const libc = @import("libc");
 const blockdev = @import("../core/platform/linux/blockdev.zig");
 fn image(dir: std.Io.Dir, a: std.mem.Allocator) ![:0]const u8 {
     const file = try dir.createFile(std.testing.io, "disk.img", .{ .exclusive = true });
@@ -75,8 +75,8 @@ test "a competing disk lease rejects formatting before any file byte changes" {
     const path = try image(temp.dir, arena.allocator());
     const file = try temp.dir.openFile(std.testing.io, "disk.img", .{});
     defer file.close(std.testing.io);
-    try std.testing.expectEqual(@as(c_int, 0), c.flock(file.handle, c.LOCK_EX | c.LOCK_NB));
-    defer _ = c.flock(file.handle, c.LOCK_UN);
+    try std.testing.expectEqual(@as(c_int, 0), libc.flock(file.handle, libc.LOCK_EX | libc.LOCK_NB));
+    defer _ = libc.flock(file.handle, libc.LOCK_UN);
     const original = try digest(path);
     try std.testing.expectError(error.NativeOperationFailed, blockdev.perform(.{ .disk = path, .part = path, .kind = .format, .filesystem = "ext4", .label = "Locked", .mounted = false }));
     try std.testing.expectEqualSlices(u8, &original, &try digest(path));

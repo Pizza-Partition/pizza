@@ -1,476 +1,360 @@
-// Runs entirely against a local fixture: no host authorization or disk access.
-// PIZZA_PLAYWRIGHT_MODULE may point to an existing playwright-core installation.
-// PIZZA_CHROMIUM_EXECUTABLE selects a locally installed Chromium binary.
+// Drives the real frontend in Chromium against fixtures only: the demo backend
+// and a stubbed WebUI bridge. It never reaches the native backend or a disk.
+// PIZZA_PLAYWRIGHT_MODULE may point to an existing playwright-core installation,
+// PIZZA_CHROMIUM_EXECUTABLE to a Chromium binary, PIZZA_LAYOUT_CAPTURES to a
+// directory that receives screenshots.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-const {CONTRACT}=await import(new URL('../../../zig-out/share/pizza/protocol/contract.js',import.meta.url));
-const PROTOCOL_VERSION=CONTRACT['x-pizza'].version;
-const { chromium } = await import(process.env.PIZZA_PLAYWRIGHT_MODULE || 'playwright-core');
+
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const SIZES = [
-  [1861, 969],
-  [1440, 960],
-  [1280, 720],
-  [1140, 615],
-  [1024, 600],
-  [960, 540],
-  [768, 640],
-  [390, 844],
-  [600, 400],
-  [320, 568],
-  [800, 360],
-];
+const contract = root + 'zig-out/share/pizza/protocol/contract.js';
+const { CONTRACT } = await import(contract);
+const VERSION = CONTRACT['x-pizza'].version;
+const { chromium } = await import(process.env.PIZZA_PLAYWRIGHT_MODULE || 'playwright-core');
 const captures = process.env.PIZZA_LAYOUT_CAPTURES;
 if (captures) await fs.mkdir(captures, { recursive: true });
+
+const SIZES = [
+  [1861, 969],
+  [1160, 740],
+  [1024, 600],
+  [768, 640],
+  [390, 844],
+  [800, 360],
+  [360, 400],
+];
+const TYPES = {
+  html: 'text/html',
+  js: 'text/javascript',
+  css: 'text/css',
+  svg: 'image/svg+xml',
+  ttf: 'font/ttf',
+};
+
 const server = http.createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname;
-  if (path === '/webui.js') {
-    res.setHeader('Content-Type', 'text/javascript');
-    res.end('');
-    return;
-  }
+  if (path === '/webui.js') return res.setHeader('Content-Type', TYPES.js).end('');
   const file =
     path === '/protocol/contract.js'
-      ? root + 'zig-out/share/pizza/protocol/contract.js'
+      ? contract
       : root + 'ui/partition/prototype' + (path === '/' ? '/index.html' : path);
   try {
     const body = await fs.readFile(file);
-    res.setHeader(
-      'Content-Type',
-      {
-        html: 'text/html',
-        js: 'text/javascript',
-        css: 'text/css',
-        svg: 'image/svg+xml',
-        ttf: 'font/ttf',
-      }[file.split('.').pop()] || 'application/octet-stream',
-    );
-    res.end(body);
+    res
+      .setHeader('Content-Type', TYPES[file.split('.').pop()] ?? 'application/octet-stream')
+      .end(body);
   } catch {
-    res.writeHead(404);
-    res.end();
+    res.writeHead(404).end();
   }
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const BASE = `http://127.0.0.1:${server.address().port}`;
-let browser;
-const ERRORS = [];
+const browser = await chromium.launch({ executablePath: process.env.PIZZA_CHROMIUM_EXECUTABLE });
+const errors = [];
 let checks = 0;
-async function matrix(page, name, selector) {
+
+async function open(url, init) {
+  const context = await browser.newContext({
+    viewport: { width: 1160, height: 740 },
+    acceptDownloads: true,
+  });
+  const page = await context.newPage();
+  page.on('pageerror', (e) => errors.push(e.stack));
+  page.on('console', (m) => m.type() === 'error' && !/404/.test(m.text()) && errors.push(m.text()));
+  if (init) await page.addInitScript(init, VERSION);
+  await page.goto(BASE + url);
+  return page;
+}
+
+/** Every window size: no horizontal overflow, and navigation stays reachable. */
+async function fits(page, name) {
   for (const [width, height] of SIZES) {
     await page.setViewportSize({ width, height });
     await page.evaluate(async () => {
       await document.fonts.ready;
       await Promise.allSettled(
         document
-          .querySelector('#app .page')
+          .querySelector('.screen')
           .getAnimations()
           .map((a) => a.finished),
       );
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     });
-    const bounds = await page.evaluate((selector) => {
-      const rect = (el) => el.getBoundingClientRect().toJSON();
-      const region = document.querySelector(selector);
+    const m = await page.evaluate(() => {
+      const app = document.querySelector('#app');
+      const foot = document.querySelector('.slot-foot');
       return {
-        width: document.documentElement.scrollWidth,
-        height: document.documentElement.scrollHeight,
-        region: rect(region),
-        nav: [
-          ...document.querySelectorAll(
-            '.page-nav button:not([hidden]),.page-nav a,.welcome .primary,.scene-actions .primary',
-          ),
-        ].map(rect),
+        doc: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+        app: app.scrollWidth - app.clientWidth,
+        buttons: [...(foot?.querySelectorAll('.btn') ?? [])].map((b) =>
+          b.getBoundingClientRect().toJSON(),
+        ),
       };
-    }, selector);
-    assert.ok(bounds.width <= width, `${name} ${width}×${height}: horizontal document overflow`);
-    assert.ok(bounds.height <= height, `${name} ${width}×${height}: vertical document overflow`);
-    assert.ok(
-      bounds.region.height >= 40,
-      `${name} ${width}×${height}: collapsed content ${JSON.stringify(bounds)}`,
-    );
-    for (const button of bounds.nav) {
+    });
+    const at = `${name} ${width}×${height}`;
+    assert.ok(m.doc[0] <= width && m.app <= 0, `${at}: horizontal overflow ${JSON.stringify(m)}`);
+    assert.ok(m.doc[1] <= height, `${at}: the document scrolls instead of the app region`);
+    for (const b of m.buttons)
       assert.ok(
-        button.left >= 0 && button.right <= width && button.top >= 0 && button.bottom <= height,
-        `${name} ${width}×${height}: navigation outside window`,
+        b.left >= 0 && b.right <= width + 0.5 && b.bottom <= height + 0.5,
+        `${at}: navigation outside window`,
       );
-    }
-    if (await page.locator('.review-content').count()) {
-      const layout = await page.evaluate(() => {
-        const content = document.querySelector('.review-content'),
-          mini = document.querySelector('.review-mini');
-        content.scrollTop = content.scrollHeight;
-        const note = content.querySelector('.review-boundary').getBoundingClientRect(),
-          r = content.getBoundingClientRect(),
-          s = mini.getBoundingClientRect();
-        return {
-          lastVisible: note.bottom <= r.bottom + 1,
-          separated: s.bottom <= r.top + 1 || s.left >= r.right - 1,
-        };
-      });
-      assert.ok(layout.lastVisible, `${name}: Undo notice cannot be reached`);
-      assert.ok(layout.separated, `${name}: summary overlaps change list`);
-      await page.locator('.review-content').evaluate((el) => (el.scrollTop = 0));
-    }
-    if (
-      captures &&
-      [
-        [1861, 969],
-        [390, 844],
-        [600, 400],
-      ].some(([w, h]) => w === width && h === height)
-    )
+    if (captures && (width === 1160 || width === 390))
       await page.screenshot({ path: `${captures}/${name}-${width}x${height}.png` });
-    if (await page.locator('.scene-art').count()) {
-      const art = await page.locator('.scene-art').boundingBox();
-      assert.ok(art.height >= 40, `${name}: illustration collapsed`);
-    }
     checks++;
   }
+  await page.setViewportSize({ width: 1160, height: 740 });
 }
-async function fixture(kind) {
-  const context = await browser.newContext({
-    acceptDownloads: true,
-    ...(kind === 'authorization' ? { viewport: { width: 1280, height: 900 } } : {}),
-  });
-  const page = await context.newPage();
-  page.on('pageerror', (e) => ERRORS.push(e.stack));
-  await page.addInitScript(({kind,version,label}) => {
-    const gib = 1073741824n,
-      id = 'b'.repeat(64),
-      digest = 'd'.repeat(64);
+const count = (page) => page.locator('.slot-changes .count').innerText();
+const segment = (page, name) => page.locator('.lane-live .seg', { hasText: name }).first();
+
+try {
+  // 1. The demo backend runs the whole journey through the real application.
+  const page = await open('/?demo=1');
+  await page.waitForSelector('.screen-disks .disk');
+  assert.equal(await page.locator('.disk').count(), 3);
+  await fits(page, 'choose');
+
+  await page.locator('.disk').first().click();
+  await page.waitForSelector('.screen-plan .lane-live');
+  assert.equal(await count(page), '0');
+  assert.ok(await page.locator('[data-action="review"]').isDisabled(), 'nothing to review yet');
+  assert.ok(await page.locator('[data-action="undo"]').isDisabled());
+
+  // A protected partition can be inspected, never changed.
+  await segment(page, 'EFI').click();
+  assert.ok(await page.locator('#size-value').isDisabled());
+  assert.ok(await page.locator('[data-action="delete"]').isDisabled());
+
+  // Free space → new partition; the plan is a visible diff and is undoable.
+  await segment(page, 'Free Space').click();
+  await page.locator('[data-action="add-left"]').click();
+  await page.waitForSelector('.lane-live .seg-created');
+  assert.equal(await count(page), '1');
+  await page.locator('#label').fill('Scratch');
+  await page.locator('#label').press('Tab');
+  await page.waitForSelector('.lane-live .seg-created:has-text("Scratch")');
+  await page.locator('[data-action="undo"]').click();
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('.lane-live .seg-created .seg-name')?.textContent.includes('Scratch'),
+  );
+  await page.locator('[data-action="undo"]').click();
+  await page.waitForFunction(() => !document.querySelector('.lane-live .seg-created'));
+  assert.equal(await count(page), '0');
+
+  // Exact size entry, a refused size, and keyboard boundary movement.
+  await segment(page, 'Data').click();
+  await page.locator('#size-value').fill('200');
+  await page.locator('#size-value').press('Enter');
+  await page.waitForSelector('.lane-live .seg-resized');
+  assert.match(await segment(page, 'Data').innerText(), /200 GiB/);
+  await page.locator('#size-value').fill('99999');
+  await page.locator('#size-value').press('Enter');
+  await page.waitForSelector('.toast.visible');
+  assert.equal(
+    await page.locator('#size-value').inputValue(),
+    '200',
+    'a refused size is not left in the field',
+  );
+  const grip = page.locator('.grip').last();
+  await grip.focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.waitForFunction(
+    () => document.querySelector('.lane-live .seg-resized .seg-size')?.textContent === '201 GiB',
+  );
+  assert.ok(
+    await page.evaluate(() => document.activeElement?.matches('.grip')),
+    'the boundary keeps focus',
+  );
+
+  // Pointer drag commits through the backend.
+  const box = await grip.boundingBox();
+  await page.mouse.move(box.x, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 60, box.y + box.height / 2, { steps: 4 });
+  assert.ok(await page.locator('.grip.is-dragging').count(), 'drag shows a live readout');
+  await page.mouse.up();
+  await page.waitForFunction(
+    () => document.querySelector('.lane-live .seg-resized .seg-size')?.textContent !== '201 GiB',
+  );
+
+  // Formatting marks data loss everywhere it is shown.
+  await page.locator('#filesystem').selectOption('xfs');
+  await page.waitForSelector('.lane-live .seg-erased');
+  assert.ok(await page.locator('.change-danger').count());
+  await page.evaluate(() => document.querySelector('.toast').classList.remove('visible'));
+  await fits(page, 'plan');
+
+  // Review: destructive plans need an explicit acknowledgement.
+  await page.locator('[data-action="review"]').click();
+  await page.waitForSelector('.screen-review');
+  const apply = page.locator('[data-action="execute"]');
+  assert.ok(await apply.isDisabled(), 'apply is blocked until data loss is acknowledged');
+  assert.match(await page.locator('.ack').innerText(), /Data/);
+  await fits(page, 'review');
+  const saved = page.waitForEvent('download');
+  await page.locator('[data-action="export-plan"]').click();
+  const draft = JSON.parse(await fs.readFile(await (await saved).path(), 'utf8'));
+  assert.equal(draft.version, VERSION);
+  assert.ok(
+    draft.layout.every((p) => /^\d+$/.test(p.offset) && /^\d+$/.test(p.length)),
+    'exact byte strings',
+  );
+  await page.locator('[data-action="show-plan"]').click();
+  await page.waitForSelector('.screen-plan');
+  assert.match(await segment(page, 'Data').innerText(), /erase/i, 'returning to the plan keeps it');
+  await page.locator('[data-action="review"]').click();
+  await page.locator('.ack input').check();
+  await apply.click();
+
+  await page.waitForSelector('.screen-run');
+  await fits(page, 'apply');
+  await page.waitForSelector('.run-card.is-done', { timeout: 15000 });
+  assert.equal(await page.locator('h1').innerText(), 'All set.');
+  await page.locator('[data-action="finish-run"]').click();
+  await page.waitForSelector('.screen-disks');
+  assert.match(await page.locator('.disk').first().innerText(), /xfs|Data/);
+  await page.context().close();
+
+  // 2. Stubbed bridge: authorization, refusal copy, and a lost execution.
+  const live = await open('/', (version) => {
+    const hex = (c) => c.repeat(64);
+    const gib = 1073741824n;
+    const part = {
+      id: hex('b'),
+      path: '/dev/fixture1',
+      offset: '1048576',
+      length: String(8n * gib),
+      name: 'Fixture',
+      filesystem: 'ext4',
+      encryption: 'none',
+      protected: false,
+      mountpoints: [],
+      capabilities: ['label', 'resize', 'format', 'delete'].map((operation) => ({
+        operation,
+        support: 'available',
+        reason: '',
+      })),
+    };
     const disk = {
-      path: '/dev/pizza-ui-fixture',
-      identity: 'a'.repeat(64),
+      path: '/dev/fixture',
+      identity: hex('a'),
       capacity: String(20n * gib),
       sector_size: 512,
-      model: 'UI fixture only',
+      model: 'UI fixture',
+      read_only: false,
       partition_table: 'gpt',
       usable_offset: '1048576',
       usable_length: String(20n * gib - 2097152n),
-      read_only: false,
-      diagnostics: [],
-      partitions: [
-        {
-          path: '/dev/pizza-ui-fixture1',
-          id,
-          offset: '1048576',
-          length: String(8n * gib),
-          name: label,
-          filesystem: 'ext4',
-          encryption: 'none',
-          protected: false,
-          mountpoints: [],
-          capabilities: ['label', 'resize', 'format', 'delete'].map((operation) => ({
-            operation,
-            support: 'available',
-            backend: 'host',
-          })),
-        },
-      ],
-    };
-    const snapshot = {
-      version,
-      snapshot_id: 'c'.repeat(64),
-      platform: 'linux',
-      disks: [disk],
+      partitions: [part],
       diagnostics: [],
     };
-    if (kind === 'authorization')
-      snapshot.disks = Array.from({ length: 8 }, (_, i) => ({
-        ...structuredClone(disk),
-        path: disk.path + (i ? '-' + i : ''),
-        identity: String(i).repeat(64),
-      }));
-    globalThis.fixture = { kind, status: 'running', calls: [], pendingInventory: [] };
+    globalThis.fixture = { calls: [], authorized: false };
     globalThis.webui = {
-      isConnected() {
-        return true;
-      },
+      isConnected: () => true,
       async call(binding, payload) {
-        if (binding === 'pizza_session')
-          return JSON.stringify(
-            kind === 'connection'
-              ? {
-                  error: 'fixture_unavailable',
-                  message: 'The local fixture is unavailable. Retry the connection.',
-                }
-              : { version, writes_enabled: true, formats: ['ext4'] },
-          );
-        const req = JSON.parse(payload);
-        fixture.calls.push(req);
+        const req = payload ? JSON.parse(payload) : {};
+        fixture.calls.push({ binding, ...req });
+        const reply = (value) => JSON.stringify({ version, ...value });
+        if (binding === 'pizza_session') return reply({ writes_enabled: true, formats: ['ext4'] });
         if (req.action === 'inventory') {
-          if (fixture.failInventory) throw Error('Simulated inventory read failure.');
-          const result = structuredClone(snapshot);
-          if (kind === 'authorization' && !req.elevated && !fixture.authorized)
-            for (const d of result.disks) {
-              delete d.partition_table;
-              delete d.usable_offset;
-              delete d.usable_length;
-            }
-          if (fixture.reverseDisks) result.disks.reverse();
-          if (fixture.removeDisk)
-            result.disks = result.disks.filter((d) => d.path !== fixture.removeDisk);
-          if (fixture.deferNextInventory) {
-            fixture.deferNextInventory = false;
-            await new Promise((resolve) => fixture.pendingInventory.push(resolve));
-          }
+          const d = structuredClone(disk);
           if (req.elevated) fixture.authorized = true;
-          return JSON.stringify(result);
+          if (!fixture.authorized)
+            for (const key of ['partition_table', 'usable_offset', 'usable_length', 'identity'])
+              delete d[key];
+          return reply({ snapshot_id: hex('c'), platform: 'linux', disks: [d], diagnostics: [] });
         }
-        if (binding === 'pizza_plan' || req.action === 'validate') {
-          // Presentation-only fixture: domain rules are exercised by Zig tests.
-          // The bridge returns a layout supplied by this explicit UI scenario.
-          if (binding === 'pizza_plan') {
-            const layout=req.layout ?? disk.partitions.map((p)=>({id:p.id,offset:p.offset,length:p.length,name:p.name,filesystem:p.filesystem,retain_data:true}));
-            const draft={version,snapshot_id:snapshot.snapshot_id,disk_identity:req.disk_identity,layout,intents:[]};
-            if (!req.review) return JSON.stringify({version,draft,regions:layout.map((p)=>({...disk.partitions.find((old)=>old.id===p.id),...p}))});
-            req.draft=draft;
-          }
-          const count = kind === 'empty' ? 0 : kind === 'crowded' ? 30 : 3;
-          const validated={
+        if (binding === 'pizza_plan') {
+          if (req.command?.kind === 'delete')
+            return JSON.stringify({
+              error: 'OperationUnavailable',
+              message: 'OperationUnavailable',
+            });
+          const layout = req.layout ?? [
+            {
+              id: part.id,
+              offset: part.offset,
+              length: part.length,
+              name: part.name,
+              filesystem: 'ext4',
+              retain_data: true,
+            },
+          ];
+          if (req.command?.kind === 'label') layout[0].name = req.command.name;
+          const intents =
+            layout[0].name === part.name
+              ? []
+              : [{ kind: 'label', partition_id: part.id, label: layout[0].name }];
+          const draft = {
             version,
-            digest,
-            executable: kind === 'changes',
-            draft: req.draft,
-            operations: Array.from({ length: count }, (_, i) => ({
-              kind: i === 0 ? 'format' : 'resize',
-              partition_id: id,
-              length: String(8n * gib),
-            })),
-            diagnostics:
-              kind === 'crowded'
-                ? Array.from({ length: 8 }, () => ({
-                    severity: 'error',
-                    code: 'fixture_validation_message',
-                    message:
-                      'Validation fixture: ' +
-                      'A long diagnostic that must remain readable and scrollable. '.repeat(12),
-                  }))
-                : [],
-            destructive_partitions: count ? [id] : [],
+            snapshot_id: hex('c'),
+            disk_identity: disk.identity,
+            layout,
+            intents,
           };
-          return JSON.stringify(binding === 'pizza_plan' ? {version,draft:req.draft,validated,regions:req.draft.layout.map((p)=>({...disk.partitions.find((old)=>old.id===p.id),...p}))} : validated);
+          const result = { draft, regions: layout.map((p) => ({ ...part, ...p })) };
+          if (req.review)
+            result.validated = {
+              version,
+              digest: hex('d'),
+              executable: true,
+              offline_validation_required: false,
+              operations: intents,
+              diagnostics: [],
+              destructive_partitions: [],
+              draft,
+            };
+          return reply(result);
         }
-        if (fixture.status === 'disconnected')
-          throw Error('Simulated execution connection failure.');
-        return JSON.stringify({
-          version,
-          id: 'e'.repeat(64),
-          plan_digest: digest,
-          status: fixture.status,
-          completed: fixture.status === 'succeeded' ? 3 : 1,
-          total: 3,
-          message:
-            fixture.status === 'failed'
-              ? 'Stopped after a partially completed step. ' +
-                'Review the durable report before creating another plan. '.repeat(12)
-              : 'UI fixture execution status; no disk operation was requested.',
-        });
+        throw Error('Simulated loss of the execution reply.');
       },
     };
-  }, {kind,version:PROTOCOL_VERSION,label:String.fromCodePoint(0x4e00+Math.floor(Math.random()*256))+crypto.randomUUID().slice(0,8)});
-  await page.goto(BASE);
-  return { page, context };
-}
-try {
-  browser = await chromium.launch({
-    headless: true,
-    ...(process.env.PIZZA_CHROMIUM_EXECUTABLE
-      ? { executablePath: process.env.PIZZA_CHROMIUM_EXECUTABLE }
-      : {}),
   });
-  // Authorization and refresh must update data without remounting the page,
-  // resetting disclosures/scroll/focus or replaying its opacity animation.
-  {
-    const { page, context } = await fixture('authorization');
-    await page.locator('#open-disk').click();
-    await page.evaluate(() => (globalThis.originalEditor = document.querySelector('.edit-page')));
-    await page.locator('#read-details').click();
-    await page.locator('#review:not([disabled])').waitFor();
-    assert.equal(
-      await page.evaluate(() => originalEditor === document.querySelector('.edit-page')),
-      true,
-    );
-    await page.locator('#disks').click();
-    await page.locator('[data-disk="3"]').click();
-    await page.evaluate(() => {
-      const list = document.querySelector('.disk-list'),
-        card = document.querySelector('.disk-card.selected'),
-        details = document.querySelector('.disk-detail');
-      details.open = false;
-      list.scrollTop = 150;
-      globalThis.originalView = {
-        page: document.querySelector('.disk-page'),
-        list,
-        card,
-        icon: card.querySelector('svg'),
-        details,
-        scroll: list.scrollTop,
-      };
-      fixture.deferNextInventory = true;
-    });
-    await page.locator('#refresh').click();
-    await page.waitForFunction(() => fixture.pendingInventory.length === 1);
-    assert.equal(
-      await page.evaluate(
-        () =>
-          originalView.page === document.querySelector('.disk-page') &&
-          getComputedStyle(originalView.page).opacity === '1',
-      ),
-      true,
-    );
-    await page.evaluate(() => fixture.pendingInventory.shift()());
-    await page.locator('#refresh:not([disabled])').waitFor();
-    assert.deepEqual(
-      await page.evaluate(() => ({
-        page: originalView.page === document.querySelector('.disk-page'),
-        card: originalView.card === document.querySelector('.disk-card.selected'),
-        icon: originalView.icon === document.querySelector('.disk-card.selected svg'),
-        details: originalView.details === document.querySelector('.disk-detail'),
-        open: originalView.details.open,
-        scroll: originalView.list.scrollTop === originalView.scroll,
-        focus: document.activeElement.id === 'refresh',
-        elevated: fixture.calls.filter((r) => r.action === 'inventory').at(-1).elevated,
-      })),
-      {
-        page: true,
-        card: true,
-        icon: true,
-        details: true,
-        open: false,
-        scroll: true,
-        focus: true,
-        elevated: true,
-      },
-    );
-    await page.evaluate(() => (fixture.failInventory = true));
-    await page.locator('#refresh').click();
-    await page.locator('.toast.visible').waitFor();
-    assert.equal(
-      await page.evaluate(
-        () =>
-          originalView.page === document.querySelector('.disk-page') &&
-          originalView.card.isConnected,
-      ),
-      true,
-    );
-    await page.evaluate(() => {
-      fixture.failInventory = false;
-      fixture.reverseDisks = true;
-    });
-    await page.locator('#refresh').click();
-    await page.locator('#refresh:not([disabled])').waitFor();
-    assert.equal(
-      await page.evaluate(
-        () => originalView.card === document.querySelector('.disk-card.selected'),
-      ),
-      true,
-    );
-    assert.equal(await page.locator('.disk-card.selected').getAttribute('data-disk'), '4');
-    await page.evaluate(() => (fixture.removeDisk = originalView.card.dataset.key));
-    await page.locator('#refresh').click();
-    await page.locator('#refresh:not([disabled])').waitFor();
-    assert.equal(await page.locator('.disk-card').count(), 7);
-    assert.equal(await page.locator('.disk-card.selected').count(), 1);
-    await context.close();
-  }
-  {
-    const { page, context } = await fixture('authorization');
-    await page.locator('#open-disk').click();
-    await page.evaluate(() => (fixture.deferNextInventory = true));
-    await page.locator('#read-details').click();
-    await page.waitForFunction(() => fixture.pendingInventory.length === 1);
-    await page.locator('#disks').click();
-    await page.locator('[data-disk="3"]').click();
-    await page.evaluate(() => {
-      globalThis.originalDiskPage = document.querySelector('.disk-page');
-      fixture.deferNextInventory = true;
-    });
-    await page.locator('#refresh').click();
-    await page.waitForFunction(() => fixture.pendingInventory.length === 2);
-    // Administrator read wins even when an older, unprivileged refresh returns later.
-    await page.evaluate(() => fixture.pendingInventory.shift()());
-    await page.waitForFunction(() =>
-      document.querySelector('.disk-card.selected small').textContent.startsWith('GPT'),
-    );
-    await page.evaluate(() => fixture.pendingInventory.shift()());
-    await page.locator('#refresh:not([disabled])').waitFor();
-    assert.equal(
-      await page.evaluate(() => originalDiskPage === document.querySelector('.disk-page')),
-      true,
-    );
-    assert.match(await page.locator('.disk-card.selected .disk-name').textContent(), /-3$/);
-    assert.match(await page.locator('.disk-card.selected small').textContent(), /^GPT/);
-    assert.equal(await page.locator('.edit-page').count(), 0);
-    await context.close();
-  }
-  for (const kind of ['empty', 'changes', 'crowded']) {
-    const { page, context } = await fixture(kind);
-    await page.locator('#open-disk').click();
-    await page.locator('#review').click();
-    await page.locator('.review-page').waitFor();
-    assert.equal(await page.locator('#execute').isDisabled(), kind !== 'changes');
-    await matrix(page, 'review-' + kind, '.review-content');
-    // Export must still produce the exact draft, rather than display-rounded data.
-    const download = page.waitForEvent('download');
-    await page.locator('#export').click();
-    const saved = JSON.parse(await fs.readFile(await (await download).path(), 'utf8'));
-    assert.equal(saved.version, PROTOCOL_VERSION);
-    assert.equal(typeof saved.layout[0].length, 'string');
-    if (kind === 'changes') {
-      await page.locator('#execute').click();
-      await page.locator('#execution-progress').waitFor();
-      await matrix(page, 'execution-running', '.status-workspace');
-      await page.evaluate(() => (fixture.status = 'failed'));
-      await page.getByRole('heading', { name: 'Review the result.' }).waitFor();
-      await matrix(page, 'execution-failed', '.status-workspace');
-      assert.equal(await page.locator('#execution-report').isVisible(), true);
-      assert.equal(
-        await page.evaluate(() => fixture.calls.filter((r) => r.action === 'execute').length),
-        1,
-      );
-    }
-    await context.close();
-  }
-  const { page: offline, context: offline_context } = await fixture('connection');
-  await offline.locator('.connection-page').waitFor();
-  await matrix(offline, 'connection', '.workspace');
-  await offline_context.close();
-  const { page: disconnected, context: disconnected_context } = await fixture('changes');
-  await disconnected.locator('#open-disk').click();
-  await disconnected.locator('#review').click();
-  await disconnected.locator('#execute').click();
-  await disconnected.locator('#execution-progress').waitFor();
-  await disconnected.evaluate(() => (fixture.status = 'disconnected'));
-  await disconnected.locator('#reconnect-execution').waitFor();
-  await matrix(disconnected, 'execution-reconnect', '.workspace');
-  await disconnected_context.close();
-  const context = await browser.newContext();
-  const demo = await context.newPage();
-  demo.on('pageerror', (e) => ERRORS.push(e.stack));
-  await demo.goto(BASE + '/?demo=1');
-  await demo.locator('.welcome').waitFor();
-  await matrix(demo, 'welcome', '.welcome');
-  await demo.getByRole('button', { name: /Get Started/ }).click();
-  await matrix(demo, 'disk', '.disk-list');
-  await demo.locator('[data-go="edit"]').click();
-  await matrix(demo, 'editor', '.editor-pizza');
-  await demo.locator('[data-go="review"]').click();
-  await matrix(demo, 'review-demo', '.review-content');
-  await demo.locator('[data-go="progress"]').click();
-  await demo.locator('.progress-view').waitFor();
-  await matrix(demo, 'progress', '.progress-view');
-  await demo.locator('.done').waitFor();
-  await matrix(demo, 'done', '.done');
-  await context.close();
-  assert.deepEqual(ERRORS, []);
-  console.log(
-    `PASS: ${checks} viewport/state checks; review empty/changes/long diagnostics, export, execution, reconnect and all demo screens. No disk APIs used.`,
+  await live.waitForSelector('.screen-disks .disk');
+  assert.match(await live.locator('.disk').innerText(), /Needs authorization/);
+  await live.locator('.disk').click();
+  await live.waitForSelector('.screen-plan .notice-access');
+  assert.equal(
+    await live.locator('.lane-live .grip').count(),
+    0,
+    'view-only disks have no handles',
   );
+  await live.locator('[data-action="authorize"]').click();
+  await live.waitForSelector('.lane-row-after');
+  assert.equal(await live.locator('.notice-access').count(), 0);
+  await live.locator('[data-action="delete"]').click();
+  await live.waitForSelector('.toast.visible');
+  assert.match(
+    await live.locator('.toast').innerText(),
+    /not available for this partition/,
+    'error names are explained',
+  );
+  await live.locator('#label').fill('Renamed');
+  await live.locator('#label').press('Enter');
+  await live.waitForSelector('.changes .change');
+  await live.locator('[data-action="review"]').click();
+  await live.waitForSelector('.screen-review');
+  assert.equal(await live.locator('.ack').count(), 0, 'no acknowledgement without data loss');
+  await live.locator('[data-action="execute"]').click();
+  await live.waitForSelector('.screen-disconnected');
+  await fits(live, 'disconnected');
+  const stored = await live.evaluate(
+    (v) => JSON.parse(localStorage.getItem(`pizza.execution.v${v}`)),
+    VERSION,
+  );
+  assert.deepEqual(
+    stored,
+    { id: null, digest: 'd'.repeat(64) },
+    'the approval is remembered before the reply',
+  );
+  await live.context().close();
+
+  assert.deepEqual(errors, []);
+  console.log(`layout.browser: ${checks} window checks passed`);
 } finally {
-  await browser?.close();
+  await browser.close();
   server.close();
 }

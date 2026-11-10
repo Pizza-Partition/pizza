@@ -37,7 +37,7 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_PATH, `${installed}\n`);
           JS
       - name: Install system backend dependencies
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libblockdev-dev libblockdev-part3 libblockdev-fs3 libglib2.0-dev libblkid-dev e2fsprogs
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libblockdev-dev libblockdev-part3 libblockdev-fs3 libglib2.0-dev libblkid-dev libsystemd-dev e2fsprogs
       - name: Check and test host
         run: |
           zig build fmt-check check test test-domain test-host-image test-vm-cli test-vm-common test-vm-config test-vm-download test-vm-console
@@ -53,6 +53,7 @@ jobs:
         run: |
           test -f zig-out/share/applications/pizza.desktop
           readelf -dW zig-out/bin/pizza | grep -F 'libblockdev.so.3'
+          readelf -dW zig-out/bin/pizza | grep -F 'libsystemd.so.0'
           zig-out/bin/pizza inventory > "$RUNNER_TEMP/pizza-inventory.json"
       - name: Cross-compile Windows backend
         run: zig build compile -Dtarget=x86_64-windows-gnu -Dwindows-lld=true

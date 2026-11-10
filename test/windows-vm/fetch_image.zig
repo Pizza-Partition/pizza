@@ -1,6 +1,6 @@
 //! Transport is curl; selection, resume ownership, integrity and caching are Zig.
 const std = @import("std");
-const u = @import("vm_common");
+const vm_common = @import("vm_common");
 const config_api = @import("image_config.zig");
 const cli = @import("cli.zig");
 
@@ -173,9 +173,9 @@ fn parallelDownload(init: std.process.Init, config: config_api.Config, image: co
         transfers += 1;
     }
     if (transfers > 0) {
-        const result = try u.runAt(a, io, init.environ_map, .inherit, argv.items, null, config.download.timeout_seconds + 60);
+        const result = try vm_common.runAt(a, io, init.environ_map, .inherit, argv.items, null, config.download.timeout_seconds + 60);
         for (plan.parts) |part| if (part.length > 0) try mergeTail(a, io, part, image.size);
-        _ = try u.check(result);
+        _ = try vm_common.check(result);
     }
     const output = try std.Io.Dir.cwd().createFile(io, partial, .{ .truncate = false });
     defer output.close(io);
@@ -235,7 +235,7 @@ pub fn main(init: std.process.Init) !void {
         if (st.size > image.size) return error.ImageSizeMismatch;
     } else try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = receipt, .data = identity });
     std.debug.print("Fetching {s} ({d} bytes); source: {s}\n", .{ image.id, image.size, image.source_page });
-    if (config.download.connections > 1) try parallelDownload(init, config, image, partial) else if (!(try exists(io, partial)) or (try std.Io.Dir.cwd().statFile(io, partial, .{})).size != image.size) _ = try u.check(try u.runAt(a, io, init.environ_map, .inherit, &.{
+    if (config.download.connections > 1) try parallelDownload(init, config, image, partial) else if (!(try exists(io, partial)) or (try std.Io.Dir.cwd().statFile(io, partial, .{})).size != image.size) _ = try vm_common.check(try vm_common.runAt(a, io, init.environ_map, .inherit, &.{
         "curl",    "--fail",                                       "--location",        "--silent",                                                     "--show-error", "--proto",                                              "=https",         "--proto-redir",                   "=https",
         "--retry", try a.print("{d}", .{config.download.retries}), "--connect-timeout", try a.print("{d}", .{config.download.connect_timeout_seconds}), "--max-time",   try a.print("{d}", .{config.download.timeout_seconds}), "--max-filesize", try a.print("{d}", .{image.size}), "--continue-at",
         "-",       "--output",                                     partial,             "--url",                                                        image.url,
@@ -245,7 +245,7 @@ pub fn main(init: std.process.Init) !void {
     try file.sync(io);
     file.close(io);
     try std.Io.Dir.cwd().rename(partial, std.Io.Dir.cwd(), final, io);
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try a.print("{s}.verified.json", .{final}), .data = try std.json.Stringify.valueAlloc(a, .{ .image = image, .download = try digest(io, final), .config_sha256 = u.hash(bytes) }, .{ .whitespace = .indent_2 }) });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try a.print("{s}.verified.json", .{final}), .data = try std.json.Stringify.valueAlloc(a, .{ .image = image, .download = try digest(io, final), .config_sha256 = vm_common.hash(bytes) }, .{ .whitespace = .indent_2 }) });
     const segments = try a.print("{s}.segments.json", .{partial});
     if (try exists(io, segments)) {
         const plan = try std.json.parseFromSliceLeaky(Segments, a, try std.Io.Dir.cwd().readFileAlloc(io, segments, a, .limited(512 * 1024 * 1024)), .{});

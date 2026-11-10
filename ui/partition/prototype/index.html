@@ -9,40 +9,45 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="header">
-        <a class="brand" href="#welcome" aria-label="Pizza home"
+    <div class="shell">
+      <header class="masthead">
+        <a class="brand" href="./" data-action="home" aria-label="Pizza, back to disks"
           ><span class="brand-mark" aria-hidden="true">✳</span>Pizza<span class="brand-dot"
             >.</span
           ></a
         >
-        <span class="motto">A LITTLE SPACE, A LOT MORE POSSIBILITIES.</span>
-        <div class="header-actions">
-          <button class="text-button" id="help">Help <span aria-hidden="true">↗</span></button>
-        </div>
+        <ol class="steps" aria-label="Progress">
+          <li data-step="1">Choose</li>
+          <li data-step="2">Plan</li>
+          <li data-step="3">Review</li>
+          <li data-step="4">Apply</li>
+        </ol>
+        <span class="demo-badge">Demo · sample disks</span>
+        <button type="button" class="btn btn-text" data-action="help">Help</button>
       </header>
       <main id="app"></main>
-      <footer class="footer">
-        <span>THOUGHTFULLY LAYERED. BEAUTIFULLY SIMPLE.</span
-        ><span>Made with a little <i>amore</i></span>
-      </footer>
     </div>
-    <dialog id="help-dialog">
-      <button class="close-dialog" aria-label="Close help">×</button
-      ><span class="eyebrow">A LITTLE GUIDANCE</span>
-      <h2>Make room for what’s next.</h2>
+    <dialog id="help-dialog" aria-labelledby="help-title">
+      <p class="eyebrow">A LITTLE GUIDANCE</p>
+      <h2 id="help-title">Make room for what’s next.</h2>
       <p>
-        Choose a sample disk, select a pizza slice, then drag a divider on the partition bar to
-        adjust its size. Right-click a bar segment for left / right add, delete and format actions.
-        On touch screens, use the three-dot menu or press and hold a segment.
+        A disk is one long strip of space. <strong>Now</strong> shows it as it is;
+        <strong>After</strong> shows your plan. Select a region to rename, resize, format, split or
+        delete it, or drag the boundary between two regions. Undo steps back one change at a time.
       </p>
       <p>
-        Review the complete plan before executing. Host operations do not provide unified Undo; maintenance Undo restores the state at handoff.
+        Nothing is written while you plan. Review lists every change and names any partition whose
+        data would be erased. Only <em>Apply plan</em>, with administrator approval, changes the
+        disk.
       </p>
-      <button class="primary close-help">Got it <span>↗</span></button>
+      <p>
+        Boundary handles also work from the keyboard: arrow keys move by 1 MiB, with Shift by 1 GiB,
+        and Home / End jump to the limits.
+      </p>
+      <button type="button" class="btn btn-primary" data-action="close-help">Got it</button>
     </dialog>
     <div class="toast" role="status" aria-live="polite"></div>
     <script src="/webui.js"></script>
-    <script type="module" src="./bootstrap.js"></script>
+    <script type="module" src="./main.js"></script>
   </body>
 </html>

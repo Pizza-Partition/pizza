@@ -18,7 +18,7 @@ Linux/Windows 维护构建已接通准备、完整重启接管和完成收据导
 
 ## 构建与测试
 
-Linux 需要系统 libblockdev 3 的开发和运行文件、GLib/GObject、libblkid、pkg-config，
+Linux 需要系统 libblockdev 3 的开发和运行文件、GLib/GObject、libblkid、libsystemd、pkg-config，
 以及 .zigversion 指定的 Zig。zig-webui 与 libblockdev API 源码使用 build.zig.zon
 固定 URL 和内容哈希获取；当前 libblockdev 的运行库和插件仍由系统提供。
 文件系统工具按操作需求探测，不自动安装。
@@ -116,6 +116,15 @@ Linux 使用 `if / else if` 检查工具是否可执行，顺序为 `run0 → pk
 执行由后台会话持有，页面查询进度；取消只停止后续步骤，已开始的写入会完成并核对结果。
 页面重新打开后可重连，丢失执行回复时按原计划摘要查找会话，不能自动重发执行。
 执行结束可下载包含实际布局和步骤计数的 JSON 报告。
+
+Linux 宿主通过 libsystemd 的 `sd-device` 按 `block` 子系统和 `DEVTYPE=disk` 枚举整盘，
+通过设备对象读取 sysfs 属性、父子关系和 udev 数据库属性；分区表与文件系统探测仍使用
+libblockdev/libblkid。每次查询重新创建设备对象，结果复制到快照后再释放对象，并按设备路径排序。
+磁盘身份使用设备自身或直接父设备的 `wwid`，不自行组合序列号或 USB 硬盘盒属性。
+WWID 缺失、为空、不可用（ENXIO）或格式无效的设备会被跳过并记录 warning，其余磁盘继续返回；
+虚拟块设备同样跳过。只有自身属性不存在时才查父设备，权限、内存和其他读取错误仍然上报。
+内核 WWID 可采用 NAA/EUI、NVMe UUID 或内核生成的 NVMe 标识；已有 WWID 的摘要保持一致。
+跨 Windows 与维护环境的身份匹配仍使用双方支持的 NAA/EUI 规范化规则。
 
 Linux 窗口启动时会在 GTK 初始化线程中将本进程的 `hintfull` 调为 `hintslight`，
 避免 WebKit Skia 后端的字形间距问题。其他 hinting 样式保持原样，不写入桌面字体配置。

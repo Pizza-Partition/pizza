@@ -1,18 +1,21 @@
 //! Windows capability decisions are pure and testable without Windows or COM.
 const std = @import("std");
-const w = @import("proto").wire;
-pub const Encryption = @FieldType(w.HostPartition, "encryption");
+const wire = @import("proto").wire;
+pub const Encryption = @FieldType(wire.HostPartition, "encryption");
+
 pub fn encryption(conversion_status: ?u64) Encryption {
     // Suspended protection does not mean decrypted. Only FullyDecrypted is safe.
     return if (conversion_status) |status| if (status == 0) .none else .encrypted else .unknown;
 }
-pub fn filesystem(name: []const u8) ?w.FilesystemKind {
+
+pub fn filesystem(name: []const u8) ?wire.FilesystemKind {
     if (std.ascii.eqlIgnoreCase(name, "NTFS")) return .ntfs;
     if (std.ascii.eqlIgnoreCase(name, "FAT32") or std.ascii.eqlIgnoreCase(name, "FAT")) return .vfat;
     if (std.ascii.eqlIgnoreCase(name, "exFAT")) return .exfat;
     return null;
 }
-pub fn canFs(fs: w.FilesystemKind, op: w.IntentKind) bool {
+
+pub fn canFs(fs: wire.FilesystemKind, op: wire.IntentKind) bool {
     return switch (op) {
         .resize => fs == .ntfs,
         .label, .format => fs == .ntfs or fs == .vfat or fs == .exfat,
@@ -20,7 +23,8 @@ pub fn canFs(fs: w.FilesystemKind, op: w.IntentKind) bool {
         else => false,
     };
 }
-pub fn validLabel(fs: w.FilesystemKind, label: []const u8) bool {
+
+pub fn validLabel(fs: wire.FilesystemKind, label: []const u8) bool {
     const limit: usize = switch (fs) {
         .ntfs => 32,
         .vfat => 11,
@@ -39,61 +43,84 @@ pub fn validLabel(fs: w.FilesystemKind, label: []const u8) bool {
     }
     return count <= limit and (label.len == 0 or label[label.len - 1] != ' ');
 }
+
 pub const State = struct {
-    fs: ?w.FilesystemKind = null,
+    fs: ?wire.FilesystemKind = null,
     encrypted: Encryption = .unknown,
     protected: bool = true,
     read_only: bool = true,
     offline: bool = true,
     healthy: bool = false,
     simple: bool = false,
-    pub fn writable(self: State) bool {
-        return self.fs != null and self.encrypted == .none and !self.protected and !self.read_only and !self.offline and self.healthy and self.simple;
-    }
-    pub fn reason(self: State) []const u8 {
-        if (self.encrypted == .encrypted) return "bitlocker_unsupported";
-        if (self.encrypted == .unknown) return "encryption_state_unknown";
-        if (self.protected) return "protected_partition";
-        if (!self.simple) return "unsupported_volume_mapping";
-        if (self.read_only or self.offline or !self.healthy) return "volume_not_ready";
-        return "windows_operation_unsupported";
+
+    pub fn writable(self: State) !void {
+        if (self.encrypted == .encrypted) return error.bitlocker_unsupported;
+        if (self.encrypted == .unknown) return error.encryption_state_unknown;
+        if (self.protected) return error.protected_partition;
+        if (!self.simple) return error.unsupported_volume_mapping;
+        if (self.read_only or self.offline or !self.healthy) return error.volume_not_ready;
+        if (self.fs == null) return error.windows_operation_unsupported;
     }
 };
-pub fn capabilities(a: std.mem.Allocator, state: State) ![]const w.HostCapability {
-    const kinds = [_]w.IntentKind{ .resize, .format, .label, .delete, .move, .copy };
-    const out = try a.alloc(w.HostCapability, kinds.len);
+
+pub fn capabilities(a: std.mem.Allocator, state: State) ![]const wire.HostCapability {
+    const reason: ?[]const u8 = if (state.writable()) |_| null else |err| @errorName(err);
+    const kinds = [_]wire.IntentKind{ .resize, .format, .label, .delete, .move, .copy };
+    const out = try a.alloc(wire.HostCapability, kinds.len);
     for (kinds, out) |op, *cap| {
-        const allowed = state.writable() and canFs(state.fs.?, op);
-        cap.* = .{ .operation = op, .backend = .host, .support = if (allowed) .available else .unavailable, .reason = if (allowed) "windows_storage_management" else state.reason(), .grow = allowed and op == .resize, .shrink = allowed and op == .resize };
+        const allowed = reason == null and canFs(state.fs.?, op);
+        cap.* = .{
+            .operation = op,
+            .backend = .host,
+            .support = if (allowed) .available else .unavailable,
+            .reason = if (allowed) "windows_storage_management" else reason orelse "windows_operation_unsupported",
+            .grow = allowed and op == .resize,
+            .shrink = allowed and op == .resize,
+        };
     }
     return out;
 }
+
 test "encryption never treats suspended protection or an unreadable state as decrypted" {
     try std.testing.expectEqual(.none, encryption(0));
     for ([_]u64{ 1, 2, 3, 4, 5, 99 }) |v| try std.testing.expectEqual(.encrypted, encryption(v));
     try std.testing.expectEqual(.unknown, encryption(null));
 }
+
 test "only ready simple data volumes expose Windows writes" {
     const safe: State = .{ .fs = .ntfs, .encrypted = .none, .protected = false, .read_only = false, .offline = false, .healthy = true, .simple = true };
-    try std.testing.expect(safe.writable());
+    try safe.writable();
     inline for (.{ "protected", "read_only", "offline" }) |field| {
         var bad = safe;
         @field(bad, field) = true;
-        try std.testing.expect(!bad.writable());
+        try std.testing.expectError(if (std.mem.eql(u8, field, "protected")) error.protected_partition else error.volume_not_ready, bad.writable());
     }
     inline for (.{ "healthy", "simple" }) |field| {
         var bad = safe;
         @field(bad, field) = false;
-        try std.testing.expect(!bad.writable());
+        try std.testing.expectError(if (std.mem.eql(u8, field, "simple")) error.unsupported_volume_mapping else error.volume_not_ready, bad.writable());
     }
     var bad = safe;
     bad.encrypted = .encrypted;
-    try std.testing.expect(!bad.writable());
+    try std.testing.expectError(error.bitlocker_unsupported, bad.writable());
     bad.encrypted = .unknown;
-    try std.testing.expect(!bad.writable());
+    try std.testing.expectError(error.encryption_state_unknown, bad.writable());
+    bad = safe;
+    bad.fs = null;
+    try std.testing.expectError(error.windows_operation_unsupported, bad.writable());
+    const missing_fs = try capabilities(std.testing.allocator, bad);
+    defer std.testing.allocator.free(missing_fs);
+    try std.testing.expectEqualStrings("windows_operation_unsupported", missing_fs[0].reason);
+    var fat = safe;
+    fat.fs = .vfat;
+    const fat_caps = try capabilities(std.testing.allocator, fat);
+    defer std.testing.allocator.free(fat_caps);
+    try std.testing.expectEqualStrings("windows_operation_unsupported", fat_caps[0].reason);
+    try std.testing.expectEqualStrings("windows_storage_management", fat_caps[1].reason);
     try std.testing.expect(!canFs(.vfat, .resize));
     try std.testing.expect(!canFs(.ntfs, .create));
 }
+
 test "labels count UTF-16 units and reject truncation and FAT normalization" {
     var utf8: [4]u8 = undefined;
     // Cover non-ASCII input, including supplementary UTF-16 code points,

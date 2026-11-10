@@ -1,7 +1,7 @@
 //! Install only the configured, checksum-verified ISO into a newly owned disk.
 const std = @import("std");
 const clap = @import("clap");
-const u = @import("vm_common");
+const vm_common = @import("vm_common");
 const Vm = @import("vm.zig").Vm;
 const lv = @import("libvirt.zig");
 const config_api = @import("image_config.zig");
@@ -54,7 +54,7 @@ pub fn run(init: std.process.Init) !void {
     const token = try a.dupe(u8, &std.fmt.bytesToHex(random, .lower));
     var env = try init.environ_map.clone(a);
     _ = env.swapRemove("PIZZA_VM_PASSWORD");
-    var v: Vm = .{ .a = a, .io = io, .env = env, .base = out, .stage = stage, .out = out, .user = "PizzaTest", .password = try a.alloc(u8, 0), .cases = "", .native = false, .transport = .agent, .timeout_ms = @as(i64, seconds) * 1000, .token = token, .serial = try a.print("PZ-E2E-{s}", .{token}), .wwn = try a.print("5001{s}", .{token}), .work = try a.print("C:\\Pizza-E2E-{s}", .{token}), .boot_id = try u.hostBootId(a, io) };
+    var v: Vm = .{ .a = a, .io = io, .env = env, .base = out, .stage = stage, .out = out, .user = "PizzaTest", .password = try a.alloc(u8, 0), .cases = "", .native = false, .transport = .agent, .timeout_ms = @as(i64, seconds) * 1000, .token = token, .serial = try a.print("PZ-E2E-{s}", .{token}), .wwn = try a.print("5001{s}", .{token}), .work = try a.print("C:\\Pizza-E2E-{s}", .{token}), .boot_id = try vm_common.hostBootId(a, io) };
     defer v.deinit();
     errdefer v.failure(error.ProvisioningFailed);
     const code = try std.fs.path.join(a, &.{ out, "OVMF_CODE.fd" });
@@ -64,16 +64,16 @@ pub fn run(init: std.process.Init) !void {
     if (!is_resume) {
         try std.Io.Dir.cwd().copyFile(options.code orelse "/usr/share/edk2/x64/OVMF_CODE.4m.fd", .cwd(), code, io, .{});
         try std.Io.Dir.cwd().copyFile(options.vars orelse "/usr/share/edk2/x64/OVMF_VARS.4m.fd", .cwd(), vars, io, .{});
-        _ = try u.check(try u.runAt(a, io, &v.env, .inherit, &.{ "qemu-img", "create", "-f", "raw", disk, "64G" }, null, 30));
+        _ = try vm_common.check(try vm_common.runAt(a, io, &v.env, .inherit, &.{ "qemu-img", "create", "-f", "raw", disk, "64G" }, null, 30));
     } else if ((try std.Io.Dir.cwd().statFile(io, disk, .{})).permissions.readOnly()) return error.CannotResumeFrozenBaseline;
-    _ = try u.check(try u.runAt(a, io, &v.env, .inherit, &.{ "qemu-img", "create", "-f", "raw", artifacts, "256M" }, null, 30));
-    _ = try u.check(try u.runAt(a, io, &v.env, .inherit, &.{ "mkfs.vfat", "-F", "32", "-n", "PIZZA_SETUP", artifacts }, null, 30));
+    _ = try vm_common.check(try vm_common.runAt(a, io, &v.env, .inherit, &.{ "qemu-img", "create", "-f", "raw", artifacts, "256M" }, null, 30));
+    _ = try vm_common.check(try vm_common.runAt(a, io, &v.env, .inherit, &.{ "mkfs.vfat", "-F", "32", "-n", "PIZZA_SETUP", artifacts }, null, 30));
     const answer = try std.mem.replaceOwned(u8, a, @embedFile("autounattend.xml"), "@INDEX@", try a.print("{d}", .{options.index orelse 1}));
     const answer_path = try std.fs.path.join(a, &.{ out, "autounattend.xml" });
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = answer_path, .data = answer });
-    for ([_][]const u8{ "windows-vm-guest.exe", "pizza-backend.exe", "maint.efi", "windows-tests" }) |name| _ = try u.check(try u.runAt(a, io, &v.env, .inherit, &.{ "mcopy", "-s", "-i", artifacts, try std.fs.path.join(a, &.{ stage, name }), "::/" }, null, 60));
-    _ = try u.check(try u.runAt(a, io, &v.env, .inherit, &.{ "mcopy", "-s", "-i", artifacts, try std.fs.path.join(a, &.{ drivers, "vioscsi" }), "::/" }, null, 60));
-    _ = try u.check(try u.runAt(a, io, &v.env, .inherit, &.{ "mcopy", "-i", artifacts, answer_path, "::/autounattend.xml" }, null, 30));
+    for ([_][]const u8{ "windows-vm-guest.exe", "pizza-backend.exe", "maint.efi", "windows-tests" }) |name| _ = try vm_common.check(try vm_common.runAt(a, io, &v.env, .inherit, &.{ "mcopy", "-s", "-i", artifacts, try std.fs.path.join(a, &.{ stage, name }), "::/" }, null, 60));
+    _ = try vm_common.check(try vm_common.runAt(a, io, &v.env, .inherit, &.{ "mcopy", "-s", "-i", artifacts, try std.fs.path.join(a, &.{ drivers, "vioscsi" }), "::/" }, null, 60));
+    _ = try vm_common.check(try vm_common.runAt(a, io, &v.env, .inherit, &.{ "mcopy", "-i", artifacts, answer_path, "::/autounattend.xml" }, null, 30));
     try v.startDaemon();
     const xml = try a.print("<domain type='kvm'><name>pizza-install-{s}</name><memory unit='MiB'>4096</memory><vcpu>4</vcpu>" ++
         "<os><type arch='x86_64' machine='q35'>hvm</type><loader readonly='yes' type='pflash'>{s}</loader><nvram>{s}</nvram></os>" ++
@@ -109,7 +109,7 @@ pub fn run(init: std.process.Init) !void {
         // Dismiss the DVD's first-boot key prompt; later boots use the installed OS.
         if (!is_resume and now - started < 12000 and now - last_key > 1000) {
             var key: c_uint = 28; // Linux KEY_ENTER.
-            try lv.checked(lv.c.virDomainSendKey(v.domain.?.domain, lv.c.VIR_KEYCODE_SET_LINUX, 100, &key, 1, 0));
+            try lv.checked(lv.libvirt_c.virDomainSendKey(v.domain.?.domain, lv.libvirt_c.VIR_KEYCODE_SET_LINUX, 100, &key, 1, 0));
             last_key = now;
         }
         if (now - last_screen > 10000) {
@@ -117,7 +117,7 @@ pub fn run(init: std.process.Init) !void {
             std.debug.print("Windows installation: {d}s, state={d}\n", .{ @divTrunc(now - started, 1000), (try v.domain.?.state()).state });
             last_screen = now;
         }
-        _ = lv.c.usleep(20000);
+        _ = lv.libvirt_c.usleep(20000);
     }
     if (!ready) return error.InstallationTimeout;
     // Never allow a later serial byte to trigger the DVD's unattended setup.
@@ -133,9 +133,9 @@ pub fn run(init: std.process.Init) !void {
     try v.collect();
     try v.guest("shutdown", "accept");
     const shutdown_deadline = std.Io.Clock.awake.now(io).toMilliseconds() + 60000;
-    while ((try v.domain.?.state()).state != lv.c.VIR_DOMAIN_SHUTOFF) {
+    while ((try v.domain.?.state()).state != lv.libvirt_c.VIR_DOMAIN_SHUTOFF) {
         if (std.Io.Clock.awake.now(io).toMilliseconds() >= shutdown_deadline) return error.ShutdownTimeout;
-        _ = lv.c.usleep(100000);
+        _ = lv.libvirt_c.usleep(100000);
     }
     try v.domain.?.stop();
     for ([_][]const u8{ disk, code, vars }) |path| {
@@ -144,7 +144,7 @@ pub fn run(init: std.process.Init) !void {
         try file.setPermissions(io, .fromMode(0o444));
     }
     const capabilities = try std.json.parseFromSliceLeaky(std.json.Value, a, try std.Io.Dir.cwd().readFileAlloc(io, try std.fs.path.join(a, &.{ out, "guest/capabilities.json" }), a, .limited(512 * 1024 * 1024)), .{});
-    if (!std.mem.eql(u8, v.boot_id, try u.hostBootId(a, io))) return error.HostRebooted;
+    if (!std.mem.eql(u8, v.boot_id, try vm_common.hostBootId(a, io))) return error.HostRebooted;
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = try std.fs.path.join(a, &.{ out, "baseline.json" }), .data = try std.json.Stringify.valueAlloc(a, .{ .version = @as(u32, 1), .image = image, .transport = "agent", .network = false, .host_boot_id = v.boot_id, .status = "ready", .updates_disabled = true, .servicing = servicing, .capabilities = capabilities, .guest_sha256 = (try digest(io, try std.fs.path.join(a, &.{ stage, "windows-vm-guest.exe" }))).sha256 }, .{ .whitespace = .indent_2 }) });
     std.debug.print("Frozen Windows baseline: {s}\n", .{out});
 }

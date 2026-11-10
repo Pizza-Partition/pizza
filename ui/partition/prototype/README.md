@@ -1,62 +1,70 @@
-# Pizza · interactive Web UI prototype
+# Pizza · desktop frontend
 
-Five connected screens: Welcome → Select a Disk → Slice Your Disk → Review & Confirm → All Set. A short simulated apply transition connects review to completion.
+The page embedded in `pizza` and served over the WebUI bridge. Four screens follow the one
+job the user has: **Choose** a disk → **Plan** a layout → **Review** the changes → **Apply**.
 
-Run `zig build run` for the native desktop backend, or `zig build run -- serve 4182` for browser preview. Both use the same Zig backend and WebUI transport. `?demo=1` selects the original in-memory visual demonstration.
+Run `zig build run` for the native window or `zig build run -- serve 4182` for a browser
+preview; both use the same Zig backend. `?demo=1` swaps in an in-memory backend with sample
+disks. It runs the same application code and never touches a disk.
 
-The desktop program displays real inventory and exports protocol-v4 plans using exact integer byte geometry. Administrator access uses the first available tool (run0, then pkexec, then kdesudo) to launch the same executable in privileged-exec mode; development builds work directly, without installation. Maintenance handoff remains blocked until implementation and reboot acceptance are complete. Only demo mode uses fictional data, held in memory and reset on reload.
+## Design principles
 
-- Disk selection, slice selection, divider dragging / number input, naming, file systems, contextual left / right add, delete / reset, review and JSON export work.
-- System slices are protected in this prototype. Dragging a divider redistributes capacity between its two adjacent slices. Number entry shrinks into new adjacent free space or grows into adjacent free spans. Physical sector alignment, file-system constraints and real move feasibility require the real planner.
-- Slice sizes always sum to disk capacity. Only the editor dims unselected slices; welcome, review, transition and completion use opaque artwork.
-- The food is native SVG: original ingredient silhouettes from the supplied `New project 3/src/Pizza.tsx`, composed into responsive wedges, with simpler shading and no native relief or 3D runtime. Fonts and their OFL licenses are bundled under `assets/fonts`.
-- English copy follows the supplied keyframes. This is a visual / interaction prototype, not the production frontend or maintenance environment.
+- **A disk is a line.** The map is one lane of the address space, left to right. Order and
+  adjacency are exact, because every partition operation depends on what sits next to what.
+  Widths are proportional with a minimum, and the map says so, so a 100 MiB boot partition on
+  a terabyte disk can still be seen, selected and dragged.
+- **A plan is a diff.** `Now` (the disk as read) sits above `After` (the plan). A partition
+  keeps its colour in both lanes; created, resized, moved, erased and deleted regions are
+  badged, and the same changes are listed in words beside the inspector while editing.
+- **Nothing is hidden.** Every action is a visible button on the selected region. There is no
+  context menu, long press or hover-only control. Boundary handles work with the pointer and
+  the keyboard (arrows 1 MiB, Shift 1 GiB, Home / End).
+- **Editing is reversible, applying is not.** Undo steps back one change; nothing is written
+  until Apply. A plan that erases data names the partitions and needs an explicit
+  acknowledgement before the Apply button unlocks; the reason it is locked is always shown.
+- **Exact numbers.** Sizes are byte strings end to end (`BigInt` in the page). The inspector
+  shows exact start, end and size; the size field takes MiB or GiB and is rounded down to a
+  whole sector by the backend.
+- **The pizza is the proportion view.** The artwork shows each region's true share of the disk,
+  which the map deliberately distorts for small regions.
 
-`index.html` is the shell, `style.css` the responsive visual system, `app.js` the sample interaction model, and `pizza.js` the procedural artwork. `live.js`, `live-model.js` and `transport.js` implement the native connection; `app.js` remains demo-only.
+## Modules
 
-## Preview captures
+| File                  | Responsibility                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| `main.js`             | Entry point: picks the native transport or the demo backend, starts the app.        |
+| `app.js`              | Controller: application state, backend calls, screen changes, input handling.       |
+| `views.js`            | Pure markup: state → the slots of each screen. No DOM access, no requests.          |
+| `disk-map.js`         | The lane: segments, boundary handles, and what the plan does to each region.        |
+| `plan-model.js`       | Byte arithmetic, capability checks, and `PlanClient` (serialized edits, undo).      |
+| `execution-client.js` | `ExecutionMonitor`: polls a running execution and survives a lost reply.            |
+| `transport.js`        | The WebUI bridge. The only module that knows binding names.                         |
+| `demo-backend.js`     | In-memory stand-in for the backend, same request interface as `transport.js`.       |
+| `dom.js`              | Escaping, downloads, and the slot painter that rewrites only regions whose markup changed. |
+| `pizza.js`            | Procedural SVG artwork.                                                             |
 
-The `screenshots/` folder contains the five desktop scenes and the narrow-screen editor. They are captures of the working HTML prototype, not generated mockups.
+Editing rules, plan generation and validation live in Zig (`core/planning`). The page only
+displays backend layouts and sends edit commands; `demo-backend.js` mirrors those rules for
+presentation and is not authoritative.
 
-Selection updates preserve disk cards, the pizza SVG and inspector inputs. Slice opacity and position transition over 200 / 260 ms without restarting the page entrance animation. Repeated selection, focus retention, label edits and subsequent resize / add / delete actions were checked in the browser; SVG paint definitions stay unchanged across selections. `07-selection-fix.png` captures the updated editor.
-
-The file-system picker uses a matching warm paper menu with a brick-red selection check. `format-picker.js` implements the select-only combobox / listbox, arrow and Home / End navigation, type-to-search, Enter / Space selection, Escape cancellation, Tab / outside dismissal and disabled states. Mouse and keyboard selection were checked against the review plan. The menu repositions above the field when space below is limited.
-
-The editor identifies each slice with an external callout: name, capacity and file system, connected by an elbow leader to the slice's actual angular midpoint. Text stays outside the pizza and remains opaque. Labels can also select a slice; selecting preserves SVG resources. Resizing, renaming, changing file systems and adding / removing partitions update the callouts. Checked the 0.1 GB free-space boundary and desktop / narrow layouts. `09-external-callouts.png` shows this design.
-
-`partition-bar.js` provides draggable dividers, keyboard adjustment (arrows, Shift + arrows, Home / End), and a segment context menu. Add left / right takes capacity from the clicked free span, or splits the clicked allocated partition while keeping at least 10 GB. New slices are inserted on the requested side; deleting returns capacity to free space at that position and merges adjoining free spans. Right-click, Shift + F10, a long press, or the three-dot button opens the same menu. The menu is attached to `body` so page animations cannot offset its viewport coordinates; it flips beside the pointer at window edges. Checked real pointer dragging, both insertion directions, deletion / merge, minimum / maximum sizes, protected System, review output and total capacity. Desktop and narrow layouts place the menu within about 6 px of the invocation point. `10-partition-bar-menu.png` shows this interaction.
-
-Verified in the browser: disk switching, selecting slices, numeric and keyboard resizing, 0 GB and 0.1 GB free-space boundaries, naming, changing file systems, adding and deleting slices, review contents, simulated completion, opacity rules and the help dialog. Checked desktop and 390 px responsive layouts; the browser reported no JavaScript errors. JavaScript syntax checks also pass.
-
-## Window layout regression
-
-All screens use a viewport-sized shell. Review uses the shared `review-layout.js`
-structure in live and demo modes: the changes/diagnostics region scrolls independently,
-the summary folds above it in narrow windows, and navigation stays visible. Welcome,
-preview progress and completion fit their artwork into the remaining space; short
-landscape windows place text beside the artwork.
-
-`ui/partition/test/layout.browser.mjs` serves only source files and simulated protocol
-responses on a temporary localhost port. It never calls the native backend. With an
-existing Playwright Core installation and Chromium executable, run from the repo root:
+## Tests
 
 ```sh
 zig build protocol-bindings
+node --test ui/partition/test/*.test.mjs
+
 PIZZA_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs \
 PIZZA_CHROMIUM_EXECUTABLE=/absolute/path/to/chromium \
 node ui/partition/test/layout.browser.mjs
 ```
 
-The fixture checks 11 window sizes (320×568 through 1861×969, including 800×360),
-empty and populated reviews, long diagnostics, exact-byte plan export, simulated
-execution failure/reconnection, and every demo screen. Set `PIZZA_LAYOUT_CAPTURES`
-to an output directory to save desktop, narrow and short-window screenshots.
+`layout.browser.mjs` drives the real page in Chromium against fixtures only (the demo backend
+and a stubbed bridge). It walks the whole journey: creating, renaming, undoing, exact and
+refused resizes, keyboard and pointer boundary moves, formatting, the data-loss
+acknowledgement, plan export, execution to completion, authorization of a view-only disk,
+explained backend errors, and a lost execution reply. Each screen is checked at seven window
+sizes from 1861×969 down to the 360×400 minimum for horizontal overflow and reachable
+navigation. Set `PIZZA_LAYOUT_CAPTURES` to a directory to save screenshots; `screenshots/`
+holds captures of the demo taken this way.
 
-Authorization updates the existing editor instead of remounting it. Disk refreshes
-patch cards and partition details by stable device path, preserving selection,
-focus, scroll and disclosure state. The list stays visible during reads and on
-read failure; returning from authorization does not replay the list's entrance
-animation. A late ordinary read cannot replace a newer administrator snapshot,
-and an authorization response cannot navigate a user back to an editor they left.
-The browser fixture covers these delayed-response cases, refresh failure, disk
-reordering and removal without invoking system authorization.
+Fonts and their OFL licenses are bundled under `assets/fonts`.

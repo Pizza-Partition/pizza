@@ -1,10 +1,10 @@
 //! Elevated acceptance driver. All Windows operations use the locked zigwin32
 //! bindings and the production WMI adapter. CMD only launches this executable.
 const std = @import("std");
-const u = @import("vm_common");
+const vm_common = @import("vm_common");
 const proto = @import("proto");
-const w = proto.wire;
-const n = @import("core/platform/windows/native.zig");
+const wire = proto.wire;
+const native = @import("core/platform/windows/native.zig");
 const wmi = @import("core/platform/windows/wmi.zig");
 const editor = @import("core/planning/editor.zig");
 const cli = @import("cli.zig");
@@ -16,7 +16,6 @@ const Owned = struct { serial: []const u8, wwn: []const u8, number: u32, guid: [
 const Platform = struct {
     pub const extension = ".exe";
     pub const test_dir = "windows-tests";
-    failure: wmi.Failure = .{},
     pub fn owned(g: *Guest, c: wmi.Connection) !wmi.Object {
         var disks = try c.query(g.a, "SELECT * FROM MSFT_Disk");
         defer disks.deinit();
@@ -33,76 +32,76 @@ const Platform = struct {
             const bus = try d.number("BusType");
             if (try d.boolean("IsBoot") or try d.boolean("IsSystem") or try d.number("Size") != 4 * 1024 * MIB or (bus != 1 and bus != 10)) return error.ForeignDiskRejected;
             if (!std.ascii.eqlIgnoreCase((try d.text(g.a, "UniqueId")) orelse "", g.wwn)) return error.ForeignWwnRejected;
-            const handle = try n.open(g.a, (try d.text(g.a, "Path")) orelse return error.MissingDiskPath, 0);
-            defer n.close(handle);
-            if (try n.deviceNumber(handle) != try d.number("Number")) return error.DiskMappingChanged;
-            const layout = try n.readLayout(g.a, handle);
+            const handle = try native.open(g.a, (try d.text(g.a, "Path")) orelse return error.MissingDiskPath, 0);
+            defer _ = native.kernel32.CloseHandle(handle);
+            if (try native.deviceNumber(handle) != try d.number("Number")) return error.DiskMappingChanged;
+            const layout = try native.readLayout(g.a, handle);
             defer layout.deinit(g.a);
             selected = d;
         }
         return selected orelse error.OwnedDiskMissing;
     }
     pub fn awaitInventory(g: Guest) !void {
-        const until = n.k.GetTickCount64() + 60000;
+        const until = native.kernel32.GetTickCount64() + 60000;
         var nonce: [6]u8 = undefined;
         g.io.random(&nonce);
         var attempt: usize = 0;
         var consecutive: usize = 0;
-        while (n.k.GetTickCount64() < until) : (attempt += 1) {
+        while (native.kernel32.GetTickCount64() < until) : (attempt += 1) {
             // The serial SCM service can start before the Storage WMI provider.
             // Only this read-only inventory is polled. Never replay a request
             // that prepares, executes, imports or changes a disk.
-            const result = try u.runAt(g.a, g.io, null, .inherit, &.{ try g.path("pizza-backend.exe"), "inventory" }, null, 60);
+            const result = try vm_common.runAt(g.a, g.io, null, .inherit, &.{ try g.path("pizza-backend.exe"), "inventory" }, null, 60);
             const prefix = try g.a.print("readiness-{s}-{d}", .{ std.fmt.bytesToHex(nonce, .lower), attempt });
             try std.Io.Dir.cwd().writeFile(g.io, .{ .sub_path = try g.path(try g.a.print("{s}.stdout", .{prefix})), .data = result.stdout });
             try std.Io.Dir.cwd().writeFile(g.io, .{ .sub_path = try g.path(try g.a.print("{s}.stderr", .{prefix})), .data = result.stderr });
             if (result.term.success()) {
-                const value = try std.json.parseFromSliceLeaky(w.InventorySnapshot, g.a, result.stdout, .{});
+                const value = try std.json.parseFromSliceLeaky(wire.InventorySnapshot, g.a, result.stdout, .{});
                 if (value.disks.len == 0) return error.EmptyInventory;
                 consecutive += 1;
                 if (consecutive == 2) return;
             } else {
                 if (std.mem.indexOf(u8, result.stderr, "error: WindowsWmiFailed") == null) {
-                    _ = try u.check(result);
+                    _ = try vm_common.check(result);
                     unreachable;
                 }
                 consecutive = 0;
             }
-            n.k.Sleep(1000);
+            native.kernel32.Sleep(1000);
         }
         return error.StorageReadinessTimeout;
     }
-    pub fn target(g: Guest, s: w.InventorySnapshot) !w.HostDisk {
+    pub fn target(g: Guest, s: wire.InventorySnapshot) !wire.HostDisk {
         const owner = try g.load(Owned, "owned-disk.json");
         for (s.disks) |d| {
             if (try proto.byteCount(d.capacity) != 4 * 1024 * MIB) continue;
             for (d.partitions) |p| if (p.partition_uuid != null and std.mem.eql(u8, p.partition_uuid.?, owner.data_uuid)) {
-                const h = try n.open(g.a, d.path, 0);
-                defer n.close(h);
-                if (try n.deviceNumber(h) != owner.number) return error.TargetMappingChanged;
+                const h = try native.open(g.a, d.path, 0);
+                defer _ = native.kernel32.CloseHandle(h);
+                if (try native.deviceNumber(h) != owner.number) return error.TargetMappingChanged;
                 return d;
             };
         }
         return error.TargetMissing;
     }
-    pub fn fileHash(g: Guest, d: w.HostDisk) ![]const u8 {
+    pub fn fileHash(g: Guest, d: wire.HostDisk) ![]const u8 {
         const owner = try g.load(Owned, "owned-disk.json");
-        const h = try n.open(g.a, d.path, 0);
-        defer n.close(h);
-        const layout = try n.readLayout(g.a, h);
+        const h = try native.open(g.a, d.path, 0);
+        defer _ = native.kernel32.CloseHandle(h);
+        const layout = try native.readLayout(g.a, h);
         defer layout.deinit(g.a);
-        const actual_guid = try n.guid(g.a, layout.header.Anonymous.Gpt.DiskId);
+        const actual_guid = try native.guid(g.a, layout.header.Anonymous.Gpt.DiskId);
         if (!std.mem.eql(u8, actual_guid, owner.guid)) return error.DiskGuidChanged;
         for (d.partitions) |p| if (p.partition_uuid != null and std.mem.eql(u8, p.partition_uuid.?, owner.data_uuid)) {
             const bytes = try std.Io.Dir.cwd().readFileAlloc(g.io, try g.a.print("{s}pizza-sentinel.bin", .{p.path orelse return error.VolumeMissing}), g.a, .limited(512 * 1024 * 1024));
             if (bytes.len != 2 * MIB) return error.SentinelSizeChanged;
-            return g.a.dupe(u8, &u.hash(bytes));
+            return g.a.dupe(u8, &vm_common.hash(bytes));
         };
         return error.SentinelMissing;
     }
     pub fn volume(g: Guest, c: wmi.Connection, number: u64, offset: u64) !wmi.Object {
-        const until = n.k.GetTickCount64() + 30000;
-        while (n.k.GetTickCount64() < until) {
+        const until = native.kernel32.GetTickCount64() + 30000;
+        while (native.kernel32.GetTickCount64() < until) {
             var parts = try c.query(g.a, try g.a.print("SELECT * FROM MSFT_Partition WHERE DiskNumber = {d} AND Offset = {d}", .{ number, offset }));
             defer parts.deinit();
             if (try parts.next()) |p| {
@@ -111,54 +110,54 @@ const Platform = struct {
                 defer volumes.deinit();
                 if (try volumes.next()) |v| return v;
             }
-            n.k.Sleep(100);
+            native.kernel32.Sleep(100);
         }
         return error.VolumeTimeout;
     }
     pub fn setup(g: *Guest) !void {
-        const apt = try wmi.Apartment.init(&g.native.failure);
+        const apt = try wmi.ComScope.init();
         defer apt.deinit();
-        const c = try wmi.Connection.init(g.a, wmi.STORAGE_NAMESPACE, &g.native.failure);
+        const c = try wmi.Connection.init(g.a, wmi.STORAGE_NAMESPACE);
         defer c.deinit();
         const disk = try Platform.owned(g, c);
         defer disk.deinit();
         if (try disk.number("PartitionStyle") != 0 or try disk.number("NumberOfPartitions") != 0) return error.NonemptyTargetRejected;
         const number = try disk.number("Number");
-        var privilege = try n.Privilege.enable(.volume);
+        var privilege = try native.Privilege.enable(.volume);
         defer privilege.deinit();
-        (try c.method(g.a, disk, "Initialize", &.{.{ .name = n.wideLiteral("PartitionStyle"), .value = .{ .uint32 = 2 } }})).deinit();
+        (try c.method(g.a, disk, "Initialize", &.{.{ .name = native.wideLiteral("PartitionStyle"), .value = .{ .uint32 = 2 } }})).deinit();
         for ([_]u64{ 32 * MIB, 544 * MIB }, 0..) |offset, i| {
             const current = try Platform.owned(g, c);
             defer current.deinit();
             (try c.method(g.a, current, "CreatePartition", &.{
-                .{ .name = n.wideLiteral("Size"), .value = .{ .uint64 = 512 * MIB } },                                 .{ .name = n.wideLiteral("Offset"), .value = .{ .uint64 = offset } },
-                .{ .name = n.wideLiteral("GptType"), .value = .{ .text = "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" } }, .{ .name = n.wideLiteral("AssignDriveLetter"), .value = .{ .boolean = false } },
+                .{ .name = native.wideLiteral("Size"), .value = .{ .uint64 = 512 * MIB } },                                 .{ .name = native.wideLiteral("Offset"), .value = .{ .uint64 = offset } },
+                .{ .name = native.wideLiteral("GptType"), .value = .{ .text = "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" } }, .{ .name = native.wideLiteral("AssignDriveLetter"), .value = .{ .boolean = false } },
             })).deinit();
             const v = try Platform.volume(g.*, c, number, offset);
             defer v.deinit();
-            (try c.method(g.a, v, "Format", &.{ .{ .name = n.wideLiteral("FileSystem"), .value = .{ .text = if (i == 0) "FAT32" else "NTFS" } }, .{ .name = n.wideLiteral("FileSystemLabel"), .value = .{ .text = if (i == 0) "PizzaESP" else "PizzaKeep" } }, .{ .name = n.wideLiteral("Full"), .value = .{ .boolean = false } }, .{ .name = n.wideLiteral("Force"), .value = .{ .boolean = false } } })).deinit();
+            (try c.method(g.a, v, "Format", &.{ .{ .name = native.wideLiteral("FileSystem"), .value = .{ .text = if (i == 0) "FAT32" else "NTFS" } }, .{ .name = native.wideLiteral("FileSystemLabel"), .value = .{ .text = if (i == 0) "PizzaESP" else "PizzaKeep" } }, .{ .name = native.wideLiteral("Full"), .value = .{ .boolean = false } }, .{ .name = native.wideLiteral("Force"), .value = .{ .boolean = false } } })).deinit();
             if (i == 0) {
                 // Formatting a basic-data volume first exposes a stable volume
                 // GUID. Convert only our new partition to ESP through Win32.
                 const owned_disk = try Platform.owned(g, c);
                 defer owned_disk.deinit();
-                const h = try n.open(g.a, (try owned_disk.text(g.a, "Path")).?, n.GENERIC_READ | n.GENERIC_WRITE);
-                defer n.close(h);
-                const layout = try n.readLayout(g.a, h);
+                const h = try native.open(g.a, (try owned_disk.text(g.a, "Path")).?, native.GENERIC_READ | native.GENERIC_WRITE);
+                defer _ = native.kernel32.CloseHandle(h);
+                const layout = try native.readLayout(g.a, h);
                 defer layout.deinit(g.a);
-                const api = n.win32.system.ioctl;
+                const api = native.win32.system.ioctl;
                 var found = false;
                 for (@constCast(layout.entries)) |*entry| if (entry.StartingOffset.QuadPart == @as(i64, @intCast(offset))) {
-                    entry.Anonymous.Gpt.PartitionType = n.win32.zig.Guid.initString("c12a7328-f81f-11d2-ba4b-00a0c93ec93b");
+                    entry.Anonymous.Gpt.PartitionType = native.win32.zig.Guid.initString("c12a7328-f81f-11d2-ba4b-00a0c93ec93b");
                     entry.RewritePartition = 1;
                     found = true;
                 };
                 if (!found) return error.EspMissing;
                 var returned: u32 = 0;
                 const size = @offsetOf(api.DRIVE_LAYOUT_INFORMATION_EX, "PartitionEntry") + layout.entries.len * @sizeOf(api.PARTITION_INFORMATION_EX);
-                if (n.k.DeviceIoControl(h, api.IOCTL_DISK_SET_DRIVE_LAYOUT_EX, layout.memory.ptr, @intCast(size), null, 0, &returned, null) == 0) return error.EspTypeChangeFailed;
-                if (n.k.FlushFileBuffers(h) == 0) return error.DiskFlushFailed;
-                if (n.k.DeviceIoControl(h, api.IOCTL_DISK_UPDATE_PROPERTIES, null, 0, null, 0, &returned, null) == 0) return error.DiskRefreshFailed;
+                if (native.kernel32.DeviceIoControl(h, api.IOCTL_DISK_SET_DRIVE_LAYOUT_EX, layout.memory.ptr, @intCast(size), null, 0, &returned, null) == 0) return error.EspTypeChangeFailed;
+                if (native.kernel32.FlushFileBuffers(h) == 0) return error.DiskFlushFailed;
+                if (native.kernel32.DeviceIoControl(h, api.IOCTL_DISK_UPDATE_PROPERTIES, null, 0, null, 0, &returned, null) == 0) return error.DiskRefreshFailed;
             } else {
                 const bytes = try g.a.alloc(u8, 2 * MIB);
                 g.io.random(bytes);
@@ -170,13 +169,13 @@ const Platform = struct {
         }
         const s = try g.snapshot();
         for (s.disks) |d| {
-            const h = n.open(g.a, d.path, 0) catch continue;
-            defer n.close(h);
-            if (try n.deviceNumber(h) != number) continue;
-            const l = try n.readLayout(g.a, h);
+            const h = native.open(g.a, d.path, 0) catch continue;
+            defer _ = native.kernel32.CloseHandle(h);
+            if (try native.deviceNumber(h) != number) continue;
+            const l = try native.readLayout(g.a, h);
             defer l.deinit(g.a);
             for (d.partitions) |p| if (try proto.byteCount(p.offset) == 544 * MIB) {
-                try g.save("owned-disk.json", Owned{ .serial = g.serial, .wwn = g.wwn, .number = @intCast(number), .guid = try n.guid(g.a, l.header.Anonymous.Gpt.DiskId), .data_uuid = p.partition_uuid orelse return error.PartitionUuidMissing });
+                try g.save("owned-disk.json", Owned{ .serial = g.serial, .wwn = g.wwn, .number = @intCast(number), .guid = try native.guid(g.a, l.header.Anonymous.Gpt.DiskId), .data_uuid = p.partition_uuid orelse return error.PartitionUuidMissing });
                 try g.save("baseline.json", .{ .identity = d.identity, .layout = try layouts(g.a, d), .hash = try g.fileHash(d) });
                 return;
             };
@@ -208,7 +207,7 @@ pub fn main(init: std.process.Init) !void {
     if (args.len == 2 and std.mem.eql(u8, args[1], "--install-agent")) {
         return @import("agent.zig").install(init, args[0]) catch |err| {
             const path = try std.fs.path.join(a, &.{ std.fs.path.dirname(args[0]).?, "agent-install-error.txt" });
-            try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = path, .data = try a.print("{s}: Win32={d}\n", .{ @errorName(err), @backingInt(n.k.GetLastError()) }) });
+            try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = path, .data = try a.print("{s}: Win32={d}\n", .{ @errorName(err), @backingInt(native.kernel32.GetLastError()) }) });
             return err;
         };
     }
@@ -239,15 +238,15 @@ pub fn main(init: std.process.Init) !void {
         try std.Io.File.stdout().writeStreamingAll(init.io, try a.print("PZ_SERVICING:{s}\n", .{try std.json.Stringify.valueAlloc(a, status, .{})}));
     } else if (action == .probe) {
         try Platform.awaitInventory(g);
-        const apt = try wmi.Apartment.init(&g.native.failure);
+        const apt = try wmi.ComScope.init();
         defer apt.deinit();
-        const c = try wmi.Connection.init(a, wmi.BITLOCKER_NAMESPACE, &g.native.failure);
+        const c = try wmi.Connection.init(a, wmi.BITLOCKER_NAMESPACE);
         defer c.deinit();
         var provider = try c.query(a, "SELECT * FROM Win32_EncryptableVolume");
         defer provider.deinit();
         if (try provider.next()) |obj| obj.deinit();
         const sac_available = if (std.Io.Dir.cwd().statFile(init.io, "C:\\Windows\\System32\\sacsess.exe", .{})) |_| true else |_| false;
-        const os_connection = try wmi.Connection.init(a, "ROOT\\CIMV2", &g.native.failure);
+        const os_connection = try wmi.Connection.init(a, "ROOT\\CIMV2");
         defer os_connection.deinit();
         var os_query = try os_connection.query(a, "SELECT Version, BuildNumber, Caption FROM Win32_OperatingSystem");
         defer os_query.deinit();
@@ -255,11 +254,7 @@ pub fn main(init: std.process.Init) !void {
         defer os.deinit();
         try g.save("capabilities.json", .{ .sac_available = sac_available, .bitlocker_wmi = true, .version = try os.text(a, "Version"), .build = try os.text(a, "BuildNumber"), .caption = try os.text(a, "Caption") });
     } else if (action == .setup) {
-        Platform.setup(&g) catch |err| {
-            var buffer: [2304]u8 = undefined;
-            std.debug.print("{s}\n", .{g.native.failure.message(&buffer, err)});
-            return err;
-        };
+        try Platform.setup(&g);
     } else if (action == .native) {
         try g.runNative();
     } else if (action == .plan) {
@@ -271,9 +266,9 @@ pub fn main(init: std.process.Init) !void {
     } else if (action == .verify) {
         try g.verify();
     } else if (action == .shutdown or action == .restart) {
-        var privilege = try n.Privilege.enable(.shutdown);
+        var privilege = try native.Privilege.enable(.shutdown);
         defer privilege.deinit();
-        if (n.win32.advapi32.InitiateSystemShutdownExW(null, null, if (action == .restart) 3 else 0, 0, if (action == .restart) 1 else 0, @bitCast(@as(u32, 0x80040000))) == 0) return error.ShutdownFailed;
+        if (native.win32.advapi32.InitiateSystemShutdownExW(null, null, if (action == .restart) 3 else 0, 0, if (action == .restart) 1 else 0, .{ .MAJOR_APPLICATION = 1, .FLAG_PLANNED = 1 }) == 0) return error.ShutdownFailed;
     } else return error.UnknownAction;
     try std.Io.File.stdout().writeStreamingAll(init.io, "{\"ok\":true}\n");
 }

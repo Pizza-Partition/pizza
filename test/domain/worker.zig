@@ -11,8 +11,8 @@ const Fixture = struct {
     }
     fn finish(self: *@This()) void {
         self.gate.store(false, .release);
-        // Keep the instance and callback context alive until the detached task
-        // has cleared its state and released its write lease, also on failure.
+        // Retain the instance and callback context until the task returns,
+        // including when an assertion fails.
         self.worker.wait(std.testing.io);
     }
 };
@@ -26,7 +26,7 @@ test "workers own copied tasks and isolate cancellation and write leases" {
     var task = "owned task".*;
     for ([_]*Fixture{ &first, &second }, [_][]const u8{ id, other }) |f, session| {
         try std.testing.expect(f.worker.writeLock());
-        f.worker.startExecution(session, &task, f, Fixture.run) catch |err| {
+        f.worker.startExecution(std.testing.io, session, &task, f, Fixture.run) catch |err| {
             f.worker.writeUnlock();
             return err;
         };
@@ -46,4 +46,52 @@ test "workers own copied tasks and isolate cancellation and write leases" {
     try std.testing.expect(second.received.load(.acquire));
     try std.testing.expect(!first.worker.executionActive(id));
     try std.testing.expect(!second.worker.executionActive(other));
+}
+
+test "unavailable concurrency rolls back execution and allows retry" {
+    var threaded: std.Io.Threaded = .init(std.testing.allocator, .{ .concurrent_limit = .nothing });
+    defer threaded.deinit();
+    var fixture: Fixture = .{};
+    defer fixture.finish();
+    const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    try std.testing.expect(fixture.worker.writeLock());
+    try std.testing.expectError(error.ConcurrencyUnavailable, fixture.worker.startExecution(threaded.io(), id, "owned task", &fixture, Fixture.run));
+    try std.testing.expect(!fixture.received.load(.acquire));
+    try std.testing.expect(!fixture.worker.executionActive(id));
+    try std.testing.expect((try fixture.worker.currentId(std.testing.allocator)) == null);
+    // Failure leaves the write lease with the caller, just as allocation failure does.
+    try std.testing.expect(fixture.worker.busy());
+    fixture.worker.writeUnlock();
+
+    try std.testing.expect(fixture.worker.writeLock());
+    fixture.worker.startExecution(std.testing.io, id, "owned task", &fixture, Fixture.run) catch |err| {
+        fixture.worker.writeUnlock();
+        return err;
+    };
+    fixture.finish();
+    try std.testing.expect(fixture.received.load(.acquire));
+    try std.testing.expect(!fixture.worker.busy());
+}
+
+test "worker task group can be reused after completion and repeated waits" {
+    var fixture: Fixture = .{};
+    defer fixture.finish();
+    const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    for (0..3) |_| {
+        fixture.gate.store(true, .release);
+        fixture.received.store(false, .release);
+        try std.testing.expect(fixture.worker.writeLock());
+        fixture.worker.startExecution(std.testing.io, id, "owned task", &fixture, Fixture.run) catch |err| {
+            fixture.worker.writeUnlock();
+            return err;
+        };
+        try std.testing.expect(!fixture.worker.executionCancelled(id));
+        try std.testing.expect(fixture.worker.cancelExecution(id));
+        fixture.finish();
+        fixture.worker.wait(std.testing.io);
+        try std.testing.expect(fixture.received.load(.acquire));
+        try std.testing.expect(!fixture.worker.busy());
+        try std.testing.expect(!fixture.worker.executionActive(id));
+        try std.testing.expect(!fixture.worker.executionCancelled(id));
+    }
 }

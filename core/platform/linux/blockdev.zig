@@ -1,19 +1,23 @@
 //! Host policy in Zig; libblockdev supplies filesystem and partition algorithms.
 const std = @import("std");
-const c = @import("libc");
+const libc = @import("libc");
 const bd = @import("libblockdev");
-const w = @import("proto").wire;
+const wire = @import("proto").wire;
 threadlocal var error_buffer: [2048]u8 = undefined;
 threadlocal var error_length: usize = 0;
 
-pub fn init() void {
+pub fn init() error{NativeInitializationFailed}!void {
+    error_length = 0;
     // libblockdev synchronizes initialization and checks already loaded plugins.
     var part: bd.BDPluginSpec = .{ .name = bd.BD_PLUGIN_PART, .so_name = null };
     var fs: bd.BDPluginSpec = .{ .name = bd.BD_PLUGIN_FS, .so_name = null };
     var plugins = [_][*c]bd.BDPluginSpec{ &part, &fs, null };
     var err: [*c]bd.GError = null;
-    _ = bd.bd_ensure_init(&plugins, null, &err);
-    bd.g_clear_error(&err);
+    defer bd.g_clear_error(&err);
+    if (bd.bd_ensure_init(&plugins, null, &err) == 0) {
+        message(if (err != null) std.mem.span(err.*.message) else "libblockdev initialization failed");
+        return error.NativeInitializationFailed;
+    }
 }
 
 pub fn lastError() []const u8 {
@@ -24,18 +28,21 @@ fn message(value: []const u8) void {
     error_length = @min(value.len, error_buffer.len);
     @memcpy(error_buffer[0..error_length], value[0..error_length]);
 }
+
 fn failed(err: [*c]bd.GError) error{NativeOperationFailed} {
     if (err != null) message(std.mem.span(err.*.message)) else if (error_length == 0) message("operation conditions are not satisfied");
     return error.NativeOperationFailed;
 }
-pub fn validLabel(fs: [:0]const u8, label: [:0]const u8) bool {
-    init();
+
+pub fn validLabel(fs: [:0]const u8, label: [:0]const u8) !bool {
+    try init();
     var err: [*c]bd.GError = null;
     defer bd.g_clear_error(&err);
     return bd.bd_fs_check_label(fs, label, &err) != 0;
 }
-pub fn canFs(fs: [:0]const u8, op: w.IntentKind, mounted: bool, shrinking: bool) bool {
-    init();
+
+pub fn canFs(fs: [:0]const u8, op: wire.IntentKind, mounted: bool, shrinking: bool) !bool {
+    try init();
     var err: [*c]bd.GError = null;
     defer bd.g_clear_error(&err);
     var utility: [*c]u8 = null;
@@ -60,8 +67,7 @@ pub fn canFs(fs: [:0]const u8, op: w.IntentKind, mounted: bool, shrinking: bool)
 }
 /// Whole-plan preflight is read-only. Execution repeats it at the step.
 pub fn preflightShrink(part: [:0]const u8, fs: [:0]const u8, length: u64, mounted: bool) !void {
-    init();
-    error_length = 0;
+    try init();
     if (mounted) {
         message("online shrink has no volume-health preflight; use maintenance");
         return error.HostPreflightFailed;
@@ -90,7 +96,7 @@ fn guidText(value: [:0]const u8, buffer: *[37]u8) ![:0]const u8 {
 pub const Operation = struct {
     disk: [:0]const u8,
     part: [:0]const u8,
-    kind: w.IntentKind,
+    kind: wire.IntentKind,
     filesystem: [:0]const u8,
     label: [:0]const u8 = "",
     uuid: [:0]const u8 = "",
@@ -100,21 +106,20 @@ pub const Operation = struct {
     mounted: bool = false,
 };
 pub fn perform(op: Operation) !void {
-    init();
-    error_length = 0;
+    try init();
     // Hold the lease across this operation's filesystem and partition calls.
     // The library's internal lock covers table publication only and is best effort.
-    const fd = c.open(op.disk, c.O_RDONLY | c.O_CLOEXEC);
+    const fd = libc.open(op.disk, libc.O_RDONLY | libc.O_CLOEXEC);
     if (fd < 0) {
         message("device busy or unavailable");
         return error.NativeOperationFailed;
     }
-    defer _ = c.close(fd);
-    if (c.flock(fd, c.LOCK_EX | c.LOCK_NB) != 0) {
+    defer _ = libc.close(fd);
+    if (libc.flock(fd, libc.LOCK_EX | libc.LOCK_NB) != 0) {
         message("device busy or unavailable");
         return error.NativeOperationFailed;
     }
-    defer _ = c.flock(fd, c.LOCK_UN);
+    defer _ = libc.flock(fd, libc.LOCK_UN);
     var err: [*c]bd.GError = null;
     defer bd.g_clear_error(&err);
     switch (op.kind) {
@@ -156,7 +161,7 @@ pub fn perform(op: Operation) !void {
             if (before == null) return failed(err);
             const old = before.*.size;
             bd.bd_part_spec_free(before);
-            if (!canFs(op.filesystem, .resize, op.mounted, op.length < old)) return failed(err);
+            if (!try canFs(op.filesystem, .resize, op.mounted, op.length < old)) return failed(err);
             if (op.length < old) {
                 if (!op.mounted and bd.bd_fs_check(op.part, op.filesystem, &err) == 0) return failed(err);
                 const minimum = bd.bd_fs_get_min_size(op.part, op.filesystem, &err);
@@ -170,11 +175,11 @@ pub fn perform(op: Operation) !void {
                 const matches = after.*.size == op.length;
                 bd.bd_part_spec_free(after);
                 if (!matches) return failed(err);
-                const partfd = c.open(op.part, c.O_RDONLY | c.O_CLOEXEC);
+                const partfd = libc.open(op.part, libc.O_RDONLY | libc.O_CLOEXEC);
                 if (partfd < 0) return failed(err);
-                defer _ = c.close(partfd);
+                defer _ = libc.close(partfd);
                 var actual: u64 = 0;
-                if (c.ioctl(partfd, c.BLKGETSIZE64, &actual) != 0 or actual != op.length) return failed(err);
+                if (libc.ioctl(partfd, libc.BLKGETSIZE64, &actual) != 0 or actual != op.length) return failed(err);
                 if (bd.bd_fs_resize(op.part, op.length, op.filesystem, &err) == 0) return failed(err);
             }
         },

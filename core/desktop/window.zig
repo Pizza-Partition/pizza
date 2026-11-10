@@ -25,7 +25,10 @@ pub fn run(a: std.mem.Allocator, io: std.Io, options: Options, service: anytype)
             defer arena.deinit();
             const allocator = arena.allocator();
             const response = current.respond(allocator, e.getString(), .local);
-            e.returnString(allocator.dupeSentinel(u8, response, 0) catch return);
+            e.returnString(allocator.dupeSentinel(u8, response, 0) catch {
+                e.returnString("{\"error\":\"OutOfMemory\",\"message\":\"Cannot allocate the response\"}");
+                return;
+            });
         }
         fn plan(e: *webui.Event) void {
             const current = app orelse return;
@@ -33,15 +36,21 @@ pub fn run(a: std.mem.Allocator, io: std.Io, options: Options, service: anytype)
             defer arena.deinit();
             const allocator = arena.allocator();
             const response = current.plan(allocator, e.getString()) catch |err| current.replyError(allocator, err);
-            e.returnString(allocator.dupeSentinel(u8, response, 0) catch return);
+            e.returnString(allocator.dupeSentinel(u8, response, 0) catch {
+                e.returnString("{\"error\":\"OutOfMemory\",\"message\":\"Cannot allocate the response\"}");
+                return;
+            });
         }
         fn session(e: *webui.Event) void {
             const current = app orelse return;
             var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
             defer arena.deinit();
             const allocator = arena.allocator();
-            const response = current.metadata(allocator) catch return;
-            e.returnString(allocator.dupeSentinel(u8, response, 0) catch return);
+            const response = current.metadata(allocator) catch |err| current.replyError(allocator, err);
+            e.returnString(allocator.dupeSentinel(u8, response, 0) catch {
+                e.returnString("{\"error\":\"OutOfMemory\",\"message\":\"Cannot allocate the response\"}");
+                return;
+            });
         }
     };
     Binding.app = service;
@@ -92,7 +101,7 @@ pub fn run(a: std.mem.Allocator, io: std.Io, options: Options, service: anytype)
 }
 
 const Linux = if (@import("builtin").os.tag == .linux) struct {
-    const c = @import("libc");
+    const libc = @import("libc");
     const gobject = @import("gobject");
 
     /// Apply GTK settings on GTK's own thread, before constructing the WebView.
@@ -105,14 +114,14 @@ const Linux = if (@import("builtin").os.tag == .linux) struct {
             gobject.g_object_set(settings, "gtk-xft-hintstyle", @as([*:0]const u8, "hintslight"), @as(?*anyopaque, null));
     }
     fn prepare() bool {
-        const wayland = c.getenv("WAYLAND_DISPLAY");
-        const backend = c.getenv("GDK_BACKEND");
-        const disabled = c.getenv("WEBKIT_DISABLE_DMABUF_RENDERER");
+        const wayland = libc.getenv("WAYLAND_DISPLAY");
+        const backend = libc.getenv("GDK_BACKEND");
+        const disabled = libc.getenv("WEBKIT_DISABLE_DMABUF_RENDERER");
         if (wayland == null or wayland[0] == 0 or
             backend != null and std.mem.eql(u8, std.mem.span(backend), "x11") or
             disabled != null and !std.mem.eql(u8, std.mem.span(disabled), "0") or
-            c.getenv("__NV_DISABLE_EXPLICIT_SYNC") != null or
-            c.access("/sys/module/nvidia/version", c.R_OK) != 0) return false;
-        return c.setenv("__NV_DISABLE_EXPLICIT_SYNC", "1", 0) == 0;
+            libc.getenv("__NV_DISABLE_EXPLICIT_SYNC") != null or
+            libc.access("/sys/module/nvidia/version", libc.R_OK) != 0) return false;
+        return libc.setenv("__NV_DISABLE_EXPLICIT_SYNC", "1", 0) == 0;
     }
 } else struct {};

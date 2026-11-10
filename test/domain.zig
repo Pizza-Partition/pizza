@@ -13,6 +13,7 @@ test {
     _ = @import("domain/application.zig");
     _ = @import("../core/platform/windows/policy.zig");
     _ = @import("../core/planning/identity.zig");
+    _ = @import("../core/planning/gpt.zig");
 }
 test "protocol rejects old plan versions" {
     try std.testing.expectError(error.InvalidPlan, @import("proto").validatePlan(.{ .id = "old", .version = @import("proto").API_VERSION - 1 }));

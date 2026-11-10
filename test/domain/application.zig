@@ -1,7 +1,7 @@
 //! Request-routing tests use in-memory boundaries, with no platform imports.
 const std = @import("std");
 const proto = @import("proto");
-const w = proto.wire;
+const wire = proto.wire;
 const CURRENT_VERSION = std.fmt.comptimePrint("{d}", .{proto.API_VERSION});
 const PREVIOUS_VERSION = std.fmt.comptimePrint("{d}", .{proto.API_VERSION - 1});
 const app = @import("../../core/app/service.zig");
@@ -13,20 +13,20 @@ const Disk = struct {
     capabilities: Capabilities = .{},
     writes: usize = 0,
     queries: usize = 0,
-    pub fn query(self: *@This(), _: std.mem.Allocator) !w.InventorySnapshot {
+    pub fn query(self: *@This(), _: std.mem.Allocator) !wire.InventorySnapshot {
         self.queries += 1;
         return .{ .version = proto.API_VERSION, .snapshot_id = SNAPSHOT_ID, .platform = .linux, .disks = &.{.{ .path = "/dev/test-only", .identity = DISK_ID, .model = "fixture", .capacity = "10485760", .sector_size = 512, .read_only = false, .partition_table = "gpt", .usable_offset = "1048576", .usable_length = "8388608" }} };
     }
-    pub fn validLabel(self: *@This(), a: std.mem.Allocator, fs: w.FilesystemKind, label: []const u8) !bool {
+    pub fn validLabel(self: *@This(), a: std.mem.Allocator, fs: wire.FilesystemKind, label: []const u8) !bool {
         return self.capabilities.validLabel(a, fs, label);
     }
-    pub fn canFs(self: *@This(), a: std.mem.Allocator, fs: w.FilesystemKind, op: w.IntentKind, mounted: bool, shrinking: bool) !bool {
+    pub fn canFs(self: *@This(), a: std.mem.Allocator, fs: wire.FilesystemKind, op: wire.IntentKind, mounted: bool, shrinking: bool) !bool {
         return self.capabilities.canFs(a, fs, op, mounted, shrinking);
     }
-    pub fn preflightShrink(_: *@This(), _: std.mem.Allocator, _: w.HostPartition, _: u64) !void {
+    pub fn preflightShrink(_: *@This(), _: std.mem.Allocator, _: wire.HostPartition, _: u64) !void {
         return error.UnexpectedPreflight;
     }
-    pub fn apply(self: *@This(), _: std.mem.Allocator, _: w.HostDisk, _: w.PlanIntent, _: ?w.DesiredPartition) !void {
+    pub fn apply(self: *@This(), _: std.mem.Allocator, _: wire.HostDisk, _: wire.PlanIntent, _: ?wire.DesiredPartition) !void {
         self.writes += 1;
         return error.UnexpectedWrite;
     }
@@ -50,7 +50,7 @@ const Store = struct {
     }
     pub fn latest(self: *@This(), a: std.mem.Allocator) !?[]const u8 {
         const bytes = self.record orelse return null;
-        const record = try std.json.parseFromSliceLeaky(w.ExecutionSession, a, bytes, .{});
+        const record = try std.json.parseFromSliceLeaky(wire.ExecutionSession, a, bytes, .{});
         return record.id;
     }
 };
@@ -89,21 +89,21 @@ const Maintenance = struct {
     fn port(self: *Maintenance) @import("../../core/boot/session.zig").Controller {
         return .{ .context = self, .prepare = prepare, .reboot = reboot, .complete = complete, .pending = pending, .cancel = cancel };
     }
-    fn prepare(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, _: w.InventorySnapshot, plan: w.ValidatedPlan) !w.MaintenanceSession {
+    fn prepare(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, _: wire.InventorySnapshot, plan: wire.ValidatedPlan) !wire.MaintenanceSession {
         const self: *Maintenance = @ptrCast(@alignCast(ctx));
         self.calls += 1;
         self.active = true;
         self.digest = plan.digest;
         return .{ .version = proto.API_VERSION, .id = SESSION_ID, .plan_digest = plan.digest, .phase = .prepared, .message = "fixture prepared" };
     }
-    fn reboot(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, id: []const u8, digest: []const u8) !w.MaintenanceSession {
+    fn reboot(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, id: []const u8, digest: []const u8) !wire.MaintenanceSession {
         const self: *Maintenance = @ptrCast(@alignCast(ctx));
         self.calls += 1;
         if (!self.active or !std.mem.eql(u8, id, SESSION_ID) or !std.mem.eql(u8, digest, self.digest)) return error.SessionApprovalMismatch;
         self.armed = true;
         return .{ .version = proto.API_VERSION, .id = id, .plan_digest = digest, .phase = .armed, .message = "fixture armed" };
     }
-    fn complete(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, id: ?[]const u8) !w.CompletionReceipt {
+    fn complete(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, id: ?[]const u8) !wire.CompletionReceipt {
         const self: *Maintenance = @ptrCast(@alignCast(ctx));
         self.calls += 1;
         if (!self.finished) return error.MaintenanceStillOwnsBoot;
@@ -115,7 +115,7 @@ const Maintenance = struct {
         const self: *Maintenance = @ptrCast(@alignCast(ctx));
         return self.active;
     }
-    fn cancel(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, id: []const u8, approved: ?[]const u8) !?w.MaintenanceSession {
+    fn cancel(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, id: []const u8, approved: ?[]const u8) !?wire.MaintenanceSession {
         const self: *Maintenance = @ptrCast(@alignCast(ctx));
         if (!std.mem.eql(u8, id, SESSION_ID)) return null;
         if (!std.mem.eql(u8, approved orelse return error.MissingApproval, self.digest)) return error.SessionApprovalMismatch;
@@ -133,7 +133,7 @@ test "preparation cancellation requires approval, releases the worker and refuse
     service.sessions.privileged = true;
     var maintenance: Maintenance = .{ .active = true };
     service.maintenance = maintenance.port();
-    var request: w.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .cancel, .session_id = SESSION_ID };
+    var request: wire.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .cancel, .session_id = SESSION_ID };
     try std.testing.expectError(error.MissingApproval, service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged));
     try std.testing.expect(maintenance.active and !service.sessions.worker.busy());
     request.approved_digest = DISK_ID;
@@ -163,11 +163,11 @@ test "maintenance routing binds approval, excludes host writes and waits for com
     const draft = generated.draft;
     const plan = generated.validated.?;
     try std.testing.expect(plan.offline_validation_required);
-    var request: w.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .prepare, .draft = draft, .approved_digest = DISK_ID };
+    var request: wire.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .prepare, .draft = draft, .approved_digest = DISK_ID };
     try std.testing.expectError(error.PlanApprovalChanged, service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged));
     try std.testing.expectEqual(0, maintenance.calls);
     request.approved_digest = plan.digest;
-    const prepared = try std.json.parseFromSliceLeaky(w.MaintenanceSession, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged), .{});
+    const prepared = try std.json.parseFromSliceLeaky(wire.MaintenanceSession, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged), .{});
     try std.testing.expectEqual(.prepared, prepared.phase);
     request.action = .execute;
     try std.testing.expectError(error.MaintenanceSessionInProgress, service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged));
@@ -175,12 +175,12 @@ test "maintenance routing binds approval, excludes host writes and waits for com
     request = .{ .version = proto.API_VERSION, .action = .reboot, .session_id = SESSION_ID, .approved_digest = DISK_ID };
     try std.testing.expectError(error.SessionApprovalMismatch, service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged));
     request.approved_digest = plan.digest;
-    const armed = try std.json.parseFromSliceLeaky(w.MaintenanceSession, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged), .{});
+    const armed = try std.json.parseFromSliceLeaky(wire.MaintenanceSession, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged), .{});
     try std.testing.expectEqual(.armed, armed.phase);
     request.action = .complete;
     try std.testing.expectError(error.MaintenanceStillOwnsBoot, service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged));
     maintenance.finished = true;
-    const receipt = try std.json.parseFromSliceLeaky(w.CompletionReceipt, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged), .{});
+    const receipt = try std.json.parseFromSliceLeaky(wire.CompletionReceipt, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged), .{});
     try std.testing.expectEqual(.completed, receipt.outcome);
     try std.testing.expect(!maintenance.active and !service.sessions.worker.busy());
 }
@@ -216,9 +216,9 @@ test "lost worker status is reconciled without rewriting durable records" {
     const a = arena.allocator();
     var service = fixture();
     service.sessions.privileged = true;
-    service.sessions.store.record = try std.json.Stringify.valueAlloc(a, w.ExecutionSession{ .version = proto.API_VERSION, .id = SESSION_ID, .plan_digest = DISK_ID, .status = .running, .completed = 1, .total = 2, .message = "fixture" }, .{ .emit_null_optional_fields = false });
+    service.sessions.store.record = try std.json.Stringify.valueAlloc(a, wire.ExecutionSession{ .version = proto.API_VERSION, .id = SESSION_ID, .plan_digest = DISK_ID, .status = .running, .completed = 1, .total = 2, .message = "fixture" }, .{ .emit_null_optional_fields = false });
     const response = try service.dispatch(a, "{\"version\":" ++ CURRENT_VERSION ++ ",\"action\":\"status\",\"approved_digest\":\"" ++ DISK_ID ++ "\"}", .privileged);
-    const status = try std.json.parseFromSliceLeaky(w.ExecutionSession, a, response, .{});
+    const status = try std.json.parseFromSliceLeaky(wire.ExecutionSession, a, response, .{});
     try std.testing.expectEqual(.needs_recheck, status.status);
     try std.testing.expectEqual(@as(u32, 1), status.completed);
     try std.testing.expect(status.actual != null);
@@ -232,7 +232,7 @@ test "metadata reports the supplied filesystem capabilities" {
     const a = arena.allocator();
     var service = fixture();
     const available = try std.json.parseFromSliceLeaky(std.json.Value, a, try service.metadata(a), .{});
-    try std.testing.expectEqual(std.meta.tags(w.FilesystemKind).len, available.object.get("formats").?.array.items.len);
+    try std.testing.expectEqual(std.meta.tags(wire.FilesystemKind).len, available.object.get("formats").?.array.items.len);
     service.disk.capabilities.available = false;
     const result = try std.json.parseFromSliceLeaky(std.json.Value, a, try service.metadata(a), .{});
     try std.testing.expectEqual(@as(usize, 0), result.object.get("formats").?.array.items.len);
@@ -244,8 +244,8 @@ test "changed approval fails before persistence or execution and releases the le
     const a = arena.allocator();
     var service = fixture();
     service.sessions.privileged = true;
-    const draft: w.PlanDraft = .{ .version = proto.API_VERSION, .snapshot_id = SNAPSHOT_ID, .disk_identity = DISK_ID };
-    const request: w.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .execute, .draft = draft, .approved_digest = DISK_ID };
+    const draft: wire.PlanDraft = .{ .version = proto.API_VERSION, .snapshot_id = SNAPSHOT_ID, .disk_identity = DISK_ID };
+    const request: wire.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .execute, .draft = draft, .approved_digest = DISK_ID };
     try std.testing.expectError(error.PlanApprovalChanged, service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged));
     try std.testing.expectEqual(@as(usize, 0), service.sessions.store.writes);
     try std.testing.expectEqual(@as(usize, 0), service.disk.writes);
@@ -261,18 +261,18 @@ test "approved no-change plan completes through the injected worker and record s
     service.sessions.privileged = true;
     service.sessions.store.allocator = std.testing.allocator;
     defer {
-        while (service.sessions.worker.busy()) std.Thread.yield() catch {};
+        service.sessions.worker.wait(service.io);
         if (service.sessions.store.record) |record| std.testing.allocator.free(record);
     }
-    const draft: w.PlanDraft = .{ .version = proto.API_VERSION, .snapshot_id = SNAPSHOT_ID, .disk_identity = DISK_ID };
+    const draft: wire.PlanDraft = .{ .version = proto.API_VERSION, .snapshot_id = SNAPSHOT_ID, .disk_identity = DISK_ID };
     const plan = try @import("../../core/planning/planner.zig").validate(a, try service.disk.query(a), draft, &service.disk);
     try std.testing.expect(plan.executable);
-    const request: w.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .execute, .draft = draft, .approved_digest = plan.digest };
-    const queued = try std.json.parseFromSliceLeaky(w.ExecutionSession, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged), .{});
+    const request: wire.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .execute, .draft = draft, .approved_digest = plan.digest };
+    const queued = try std.json.parseFromSliceLeaky(wire.ExecutionSession, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{ .emit_null_optional_fields = false }), .privileged), .{});
     try std.testing.expectEqual(.prepared, queued.status);
-    while (service.sessions.worker.busy()) std.Thread.yield() catch {};
-    const query: w.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .status, .session_id = queued.id, .approved_digest = plan.digest };
-    const completed = try std.json.parseFromSliceLeaky(w.ExecutionSession, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, query, .{ .emit_null_optional_fields = false }), .privileged), .{});
+    service.sessions.worker.wait(service.io);
+    const query: wire.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = .status, .session_id = queued.id, .approved_digest = plan.digest };
+    const completed = try std.json.parseFromSliceLeaky(wire.ExecutionSession, a, try service.dispatch(a, try std.json.Stringify.valueAlloc(a, query, .{ .emit_null_optional_fields = false }), .privileged), .{});
     try std.testing.expectEqual(.succeeded, completed.status);
     try std.testing.expectEqualStrings(queued.id, completed.id);
     try std.testing.expect(completed.actual != null);
@@ -332,6 +332,6 @@ test "status refuses a durable record belonging to another session" {
     const a = arena.allocator();
     var service = fixture();
     service.sessions.privileged = true;
-    service.sessions.store.record = try std.json.Stringify.valueAlloc(a, w.ExecutionSession{ .version = proto.API_VERSION, .id = SESSION_ID, .plan_digest = DISK_ID, .status = .succeeded, .completed = 0, .total = 0, .message = "fixture" }, .{ .emit_null_optional_fields = false });
-    try std.testing.expectError(error.SessionIdentityMismatch, service.dispatch(a, try std.json.Stringify.valueAlloc(a, w.PrivilegedRequest{ .version = proto.API_VERSION, .action = .status, .session_id = DISK_ID }, .{ .emit_null_optional_fields = false }), .privileged));
+    service.sessions.store.record = try std.json.Stringify.valueAlloc(a, wire.ExecutionSession{ .version = proto.API_VERSION, .id = SESSION_ID, .plan_digest = DISK_ID, .status = .succeeded, .completed = 0, .total = 0, .message = "fixture" }, .{ .emit_null_optional_fields = false });
+    try std.testing.expectError(error.SessionIdentityMismatch, service.dispatch(a, try std.json.Stringify.valueAlloc(a, wire.PrivilegedRequest{ .version = proto.API_VERSION, .action = .status, .session_id = DISK_ID }, .{ .emit_null_optional_fields = false }), .privileged));
 }

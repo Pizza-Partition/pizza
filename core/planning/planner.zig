@@ -2,7 +2,7 @@
 //! Filesystem probes are supplied by the caller; this module never calls OS APIs.
 const std = @import("std");
 const proto = @import("proto");
-const w = proto.wire;
+const wire = proto.wire;
 /// Domain admission limits, shared by editing and validation.
 pub const Limits = struct {
     pub const PARTITIONS = 4096;
@@ -10,20 +10,20 @@ pub const Limits = struct {
     pub const LABEL_BYTES = 1024;
     pub const MINIMUM_SECTOR_BYTES = 512;
 };
-fn original(disk: w.HostDisk, id: []const u8) ?w.HostPartition {
+fn original(disk: wire.HostDisk, id: []const u8) ?wire.HostPartition {
     for (disk.partitions) |p| if (std.mem.eql(u8, p.id, id)) return p;
     return null;
 }
-fn has(intents: []const w.PlanIntent, id: []const u8, kind: w.IntentKind) bool {
+fn has(intents: []const wire.PlanIntent, id: []const u8, kind: wire.IntentKind) bool {
     for (intents) |i| if (std.mem.eql(u8, i.partition_id, id) and i.kind == kind) return true;
     return false;
 }
-fn diagnostic(a: std.mem.Allocator, list: *std.ArrayList(w.Diagnostic), code: []const u8, message: []const u8, id: ?[]const u8) !void {
+fn diagnostic(a: std.mem.Allocator, list: *std.ArrayList(wire.Diagnostic), code: []const u8, message: []const u8, id: ?[]const u8) !void {
     try list.append(a, .{ .code = code, .message = message, .partition_id = id, .severity = .@"error" });
 }
-pub fn optimize(a: std.mem.Allocator, input: []const w.PlanIntent) ![]const w.PlanIntent {
+pub fn optimize(a: std.mem.Allocator, input: []const wire.PlanIntent) ![]const wire.PlanIntent {
     if (input.len > Limits.INTENTS) return error.PlanTooLarge;
-    var out: std.ArrayList(w.PlanIntent) = .empty;
+    var out: std.ArrayList(wire.PlanIntent) = .empty;
     for (input) |intent| {
         var handled = false;
         if (intent.kind == .resize or intent.kind == .move or intent.kind == .label or intent.kind == .delete) {
@@ -53,12 +53,12 @@ pub fn optimize(a: std.mem.Allocator, input: []const w.PlanIntent) ![]const w.Pl
     }
     return out.toOwnedSlice(a);
 }
-pub fn validate(a: std.mem.Allocator, inventory: w.InventorySnapshot, draft: w.PlanDraft, filesystems: anytype) !w.ValidatedPlan {
+pub fn validate(a: std.mem.Allocator, inventory: wire.InventorySnapshot, draft: wire.PlanDraft, filesystems: anytype) !wire.ValidatedPlan {
     if (draft.version != proto.API_VERSION or inventory.version != proto.API_VERSION) return error.UnsupportedProtocolVersion;
     _ = try proto.hexDigest(draft.snapshot_id);
     _ = try proto.hexDigest(draft.disk_identity);
     if (draft.layout.len > Limits.PARTITIONS or draft.intents.len > Limits.INTENTS) return error.PlanTooLarge;
-    var diags: std.ArrayList(w.Diagnostic) = .empty;
+    var diags: std.ArrayList(wire.Diagnostic) = .empty;
     if (!std.mem.eql(u8, inventory.snapshot_id, draft.snapshot_id)) try diagnostic(a, &diags, "stale_inventory", "Disk geometry changed; refresh the inventory before preparing.", null);
     const disk = for (inventory.disks) |d| {
         if (d.identity) |id| if (std.mem.eql(u8, id, draft.disk_identity)) break d;
@@ -143,7 +143,7 @@ pub fn validate(a: std.mem.Allocator, inventory: w.InventorySnapshot, draft: w.P
     const normalized = try optimize(a, draft.intents);
     for (normalized) |intent| {
         if (intent.kind == .barrier) continue;
-        const desired: ?w.DesiredPartition = for (draft.layout) |p| {
+        const desired: ?wire.DesiredPartition = for (draft.layout) |p| {
             if (std.mem.eql(u8, p.id, intent.partition_id)) break p;
         } else null;
         if (intent.kind == .delete) {
@@ -196,16 +196,16 @@ test "normalization respects data-version barriers and cancels unused creations"
     try std.testing.expectEqualStrings("4096", output[2].length.?);
 }
 
-const Stages = struct { host: []const w.PlanIntent, maintenance: []const w.PlanIntent };
-fn desiredFor(draft: w.PlanDraft, id: []const u8) ?w.DesiredPartition {
+const Stages = struct { host: []const wire.PlanIntent, maintenance: []const wire.PlanIntent };
+fn desiredFor(draft: wire.PlanDraft, id: []const u8) ?wire.DesiredPartition {
     for (draft.layout) |p| if (std.mem.eql(u8, p.id, id)) return p;
     return null;
 }
-fn hostCap(p: w.HostPartition, op: w.IntentKind) bool {
+fn hostCap(p: wire.HostPartition, op: wire.IntentKind) bool {
     for (p.capabilities) |c| if (c.operation == op and c.backend == .host and c.support == .available) return true;
     return false;
 }
-fn freeRange(parts: []const w.HostPartition, skip: []const u8, p: w.DesiredPartition) !bool {
+fn freeRange(parts: []const wire.HostPartition, skip: []const u8, p: wire.DesiredPartition) !bool {
     const start = try proto.byteCount(p.offset);
     const end = try std.math.add(u64, start, try proto.byteCount(p.length));
     for (parts) |other| {
@@ -216,12 +216,12 @@ fn freeRange(parts: []const w.HostPartition, skip: []const u8, p: w.DesiredParti
     }
     return true;
 }
-fn schedule(a: std.mem.Allocator, disk: w.HostDisk, draft: w.PlanDraft, ops: []const w.PlanIntent, filesystems: anytype) !Stages {
-    var work: std.ArrayList(w.HostPartition) = .empty;
+fn schedule(a: std.mem.Allocator, disk: wire.HostDisk, draft: wire.PlanDraft, ops: []const wire.PlanIntent, filesystems: anytype) !Stages {
+    var work: std.ArrayList(wire.HostPartition) = .empty;
     try work.appendSlice(a, disk.partitions);
     const done = try a.alloc(bool, ops.len);
     @memset(done, false);
-    var host: std.ArrayList(w.PlanIntent) = .empty;
+    var host: std.ArrayList(wire.PlanIntent) = .empty;
     var progress = true;
     while (progress) {
         progress = false;
@@ -266,7 +266,7 @@ fn schedule(a: std.mem.Allocator, disk: w.HostDisk, draft: w.PlanDraft, ops: []c
             }
         }
     }
-    var maintenance: std.ArrayList(w.PlanIntent) = .empty;
+    var maintenance: std.ArrayList(wire.PlanIntent) = .empty;
     for (ops, 0..) |op, i| if (!done[i] and op.kind != .barrier) {
         try maintenance.append(a, op);
     };

@@ -1,12 +1,12 @@
 const std = @import("std");
-const u = @import("vm_common");
+const vm_common = @import("vm_common");
 const lv = @import("libvirt.zig");
 const sac = @import("sac.zig");
 const agent = @import("agent_protocol.zig");
 const hashFile = @import("fetch_image.zig").digest;
 pub const cli = @import("cli.zig");
 pub const provision = @import("provision.zig").run;
-const c = lv.c;
+const c_api = lv.libvirt_c;
 pub var context: *Vm = undefined;
 const Result = struct { case: []const u8, outcome: []const u8, id: []const u8, hash: []const u8 };
 
@@ -56,7 +56,7 @@ pub const Vm = struct {
         if (transport == .agent and !baseline_options.updates_disabled) return error.BaselineUpdatesNotFrozen;
         var env = try init_.environ_map.clone(a);
         const password = if (transport == .agent) try a.alloc(u8, 0) else if (env.get("PIZZA_VM_PASSWORD")) |p| try a.dupe(u8, p) else blk: {
-            const p = c.getpass("Windows SAC password (not saved): ") orelse return error.PasswordRequired;
+            const p = c_api.getpass("Windows SAC password (not saved): ") orelse return error.PasswordRequired;
             const secret = try a.dupe(u8, std.mem.span(p));
             @memset(p[0..secret.len], 0);
             break :blk secret;
@@ -71,12 +71,12 @@ pub const Vm = struct {
         for ([_][]const u8{ base, stage, out }) |p| if (std.mem.indexOfAny(u8, p, "<>&\"'\r\n") != null) return error.UnsupportedPathCharacters;
         const seconds = options.timeout orelse 600;
         const native = options.native orelse .run;
-        try u.cases.validate(options.cases orelse u.cases.csv);
+        try vm_common.cases.validate(options.cases orelse vm_common.cases.csv);
         var random: [6]u8 = undefined;
         init_.io.random(&random);
         const token = try a.dupe(u8, &std.fmt.bytesToHex(random, .lower));
         try std.Io.Dir.cwd().createDir(init_.io, out, .fromMode(0o700));
-        return .{ .a = a, .io = init_.io, .env = env, .base = base, .stage = stage, .out = out, .user = user, .password = password, .transport = transport, .cases = options.cases orelse u.cases.csv, .native = native == .run, .timeout_ms = @as(i64, seconds) * 1000, .token = token, .serial = try a.print("PZ-E2E-{s}", .{token}), .wwn = try a.print("5001{s}", .{token}), .work = try a.print("C:\\Pizza-E2E-{s}", .{token}), .boot_id = try u.hostBootId(a, init_.io) };
+        return .{ .a = a, .io = init_.io, .env = env, .base = base, .stage = stage, .out = out, .user = user, .password = password, .transport = transport, .cases = options.cases orelse vm_common.cases.csv, .native = native == .run, .timeout_ms = @as(i64, seconds) * 1000, .token = token, .serial = try a.print("PZ-E2E-{s}", .{token}), .wwn = try a.print("5001{s}", .{token}), .work = try a.print("C:\\Pizza-E2E-{s}", .{token}), .boot_id = try vm_common.hostBootId(a, init_.io) };
     }
     pub fn endTime(v: Vm) i64 {
         return v.now() + v.timeout_ms;
@@ -110,7 +110,7 @@ pub const Vm = struct {
         try v.append("events.jsonl", try v.a.print("{s}\n", .{try std.json.Stringify.valueAlloc(v.a, .{ .ms = v.now(), .generation = v.generation, .phase = phase }, .{})}));
     }
     fn command(v: *Vm, argv: []const []const u8) !void {
-        _ = try u.check(try u.runAt(v.a, v.io, &v.env, .inherit, argv, null, 600));
+        _ = try vm_common.check(try vm_common.runAt(v.a, v.io, &v.env, .inherit, argv, null, 600));
     }
     pub fn deinit(v: *Vm) void {
         if (v.domain) |*d| d.deinit();
@@ -137,7 +137,7 @@ pub const Vm = struct {
         const until = v.now() + 15000;
         while (v.now() < until) {
             if (std.Io.Dir.cwd().statFile(v.io, socket, .{})) |_| break else |_| {}
-            _ = c.usleep(20000);
+            _ = c_api.usleep(20000);
         }
         v.domain = try lv.Domain.connect(v.a, try v.a.print("qemu+unix:///session?socket={s}", .{socket}));
     }
@@ -202,7 +202,7 @@ pub const Vm = struct {
                     // Wait for Windows removable-media enumeration, never retry
                     // an uncertain or partially executed installation.
                     if (err != error.ArtifactsMissing or v.now() >= until) return err;
-                    _ = c.usleep(500000);
+                    _ = c_api.usleep(500000);
                     continue;
                 };
                 break;
@@ -238,13 +238,13 @@ pub const Vm = struct {
             const state = try v.domain.?.state();
             v.last_health = v.now();
             try v.append("health.jsonl", try v.a.print("{s}\n", .{try std.json.Stringify.valueAlloc(v.a, .{ .ms = v.now(), .generation = v.generation, .state = state.state, .reason = state.reason }, .{})}));
-            if (state.state != c.VIR_DOMAIN_RUNNING and state.state != c.VIR_DOMAIN_BLOCKED) return error.GuestStopped;
+            if (state.state != c_api.VIR_DOMAIN_RUNNING and state.state != c_api.VIR_DOMAIN_BLOCKED) return error.GuestStopped;
             if (v.now() - v.last_screen >= 30000) {
                 try v.domain.?.screenshot(v.io, try v.path("current.png"));
                 v.last_screen = v.now();
             }
         }
-        if (n == 0) _ = c.usleep(10000);
+        if (n == 0) _ = c_api.usleep(10000);
     }
     pub fn wait(v: *Vm, text: []const u8, start: usize) !void {
         const until = v.now() + v.timeout_ms;
@@ -438,7 +438,7 @@ pub const Vm = struct {
             break;
         };
         if (!selected) return error.SkipZigTest;
-        _ = try u.cases.run(v, case);
+        _ = try vm_common.cases.run(v, case);
         try v.login();
         try v.guest("verify", case);
         try v.collect();
@@ -458,11 +458,11 @@ pub const Vm = struct {
         const until = v.now() + 60000;
         while (v.now() < until) {
             const state = try v.domain.?.state();
-            if (state.state == c.VIR_DOMAIN_SHUTOFF) break;
-            _ = c.usleep(100000);
+            if (state.state == c_api.VIR_DOMAIN_SHUTOFF) break;
+            _ = c_api.usleep(100000);
         }
-        if ((try v.domain.?.state()).state != c.VIR_DOMAIN_SHUTOFF) return error.ShutdownTimeout;
-        if (!std.mem.eql(u8, v.boot_id, try u.hostBootId(v.a, v.io))) return error.HostRebooted;
+        if ((try v.domain.?.state()).state != c_api.VIR_DOMAIN_SHUTOFF) return error.ShutdownTimeout;
+        if (!std.mem.eql(u8, v.boot_id, try vm_common.hostBootId(v.a, v.io))) return error.HostRebooted;
         try v.save("results.json", .{ .status = "passed", .native = v.native, .results = v.results.items, .host_boot_id = v.boot_id });
     }
     pub fn failure(v: *Vm, err: anyerror) void {

@@ -2,7 +2,7 @@
 //! identities; presentation, transport and platform discovery stay outside.
 const std = @import("std");
 const proto = @import("proto");
-const w = proto.wire;
+const wire = proto.wire;
 const identity = @import("identity.zig");
 const Limits = @import("planner.zig").Limits;
 const Allocator = std.mem.Allocator;
@@ -10,14 +10,14 @@ pub const Command = struct {
     kind: enum { resize, add_left, add_right, delete, format, label },
     partition_id: []const u8,
     length: ?[]const u8 = null,
-    filesystem: ?w.FilesystemKind = null,
+    filesystem: ?wire.FilesystemKind = null,
     name: ?[]const u8 = null,
 };
 pub const Request = struct {
     version: u16,
     snapshot_id: []const u8,
     disk_identity: []const u8,
-    layout: ?[]const w.DesiredPartition = null,
+    layout: ?[]const wire.DesiredPartition = null,
     command: ?Command = null,
     review: bool = false,
     elevated: bool = false,
@@ -28,34 +28,34 @@ pub const Region = struct {
     length: []const u8,
     name: []const u8,
     free: bool = false,
-    filesystem: ?w.FilesystemKind = null,
+    filesystem: ?wire.FilesystemKind = null,
     retain_data: bool = true,
-    encryption: @FieldType(w.HostPartition, "encryption") = .none,
+    encryption: @FieldType(wire.HostPartition, "encryption") = .none,
     protected: bool = false,
-    capabilities: []const w.HostCapability = &.{},
+    capabilities: []const wire.HostCapability = &.{},
     path: ?[]const u8 = null,
     used_bytes: ?[]const u8 = null,
     free_bytes: ?[]const u8 = null,
 };
 pub const Result = struct {
     version: u16 = proto.API_VERSION,
-    draft: w.PlanDraft,
+    draft: wire.PlanDraft,
     regions: []const Region,
     selected: ?[]const u8 = null,
-    validated: ?w.ValidatedPlan = null,
+    validated: ?wire.ValidatedPlan = null,
 };
-fn oldPartition(disk: w.HostDisk, id: []const u8) ?w.HostPartition {
+fn oldPartition(disk: wire.HostDisk, id: []const u8) ?wire.HostPartition {
     for (disk.partitions) |p| if (std.mem.eql(u8, p.id, id)) return p;
     return null;
 }
-pub fn retained(p: w.HostPartition) w.DesiredPartition {
+pub fn retained(p: wire.HostPartition) wire.DesiredPartition {
     return .{ .id = p.id, .offset = p.offset, .length = p.length, .name = p.name, .filesystem = p.filesystem, .slot = p.slot, .type_guid = p.type_guid, .partition_uuid = p.partition_uuid, .attributes = p.attributes orelse "0" };
 }
 /// Derive intents from the entire desired layout, never from a client-authored
 /// operation list. Validation and approval still use the shared wire PlanDraft.
-pub fn generate(a: Allocator, snapshot: w.InventorySnapshot, disk: w.HostDisk, layout: []const w.DesiredPartition) !w.PlanDraft {
+pub fn generate(a: Allocator, snapshot: wire.InventorySnapshot, disk: wire.HostDisk, layout: []const wire.DesiredPartition) !wire.PlanDraft {
     if (layout.len > Limits.PARTITIONS) return error.PlanTooLarge;
-    var intents: std.ArrayList(w.PlanIntent) = .empty;
+    var intents: std.ArrayList(wire.PlanIntent) = .empty;
     for (disk.partitions) |old| {
         const p = for (layout) |p| {
             if (std.mem.eql(u8, p.id, old.id)) break p;
@@ -64,19 +64,19 @@ pub fn generate(a: Allocator, snapshot: w.InventorySnapshot, disk: w.HostDisk, l
             continue;
         };
         if (!std.mem.eql(u8, p.offset, old.offset) or !std.mem.eql(u8, p.length, old.length)) try intents.append(a, .{ .kind = if (std.mem.eql(u8, p.length, old.length)) .move else .resize, .partition_id = p.id, .offset = p.offset, .length = p.length });
-        if (!std.mem.eql(u8, p.name, old.name)) try intents.append(a, .{ .kind = .label, .partition_id = p.id, .label = p.name });
+        if (p.retain_data and p.filesystem == old.filesystem and !std.mem.eql(u8, p.name, old.name)) try intents.append(a, .{ .kind = .label, .partition_id = p.id, .label = p.name });
         if (!p.retain_data or p.filesystem != old.filesystem) try intents.append(a, .{ .kind = .format, .partition_id = p.id, .filesystem = p.filesystem });
     }
     for (layout) |p| if (oldPartition(disk, p.id) == null) try intents.append(a, .{ .kind = .create, .partition_id = p.id, .offset = p.offset, .length = p.length, .filesystem = p.filesystem, .label = p.name });
     return .{ .version = snapshot.version, .snapshot_id = snapshot.snapshot_id, .disk_identity = disk.identity orelse return error.DiskIdentityNotFound, .intents = intents.items, .layout = layout };
 }
-fn less(_: void, x: w.DesiredPartition, y: w.DesiredPartition) bool {
+fn less(_: void, x: wire.DesiredPartition, y: wire.DesiredPartition) bool {
     return (proto.byteCount(x.offset) catch 0) < (proto.byteCount(y.offset) catch 0);
 }
 fn freeRegion(a: Allocator, offset: u64, length: u64) !Region {
     return .{ .id = try a.print("free:{d}", .{offset}), .offset = try a.print("{d}", .{offset}), .length = try a.print("{d}", .{length}), .name = "", .free = true };
 }
-pub fn regions(a: Allocator, disk: w.HostDisk, layout: []const w.DesiredPartition) ![]const Region {
+pub fn regions(a: Allocator, disk: wire.HostDisk, layout: []const wire.DesiredPartition) ![]const Region {
     var out: std.ArrayList(Region) = .empty;
     var at = try proto.byteCount(disk.usable_offset orelse return error.UnknownUsableRange);
     const end = try std.math.add(u64, at, try proto.byteCount(disk.usable_length orelse return error.UnknownUsableRange));
@@ -108,23 +108,23 @@ pub fn regions(a: Allocator, disk: w.HostDisk, layout: []const w.DesiredPartitio
     if (at < end) try out.append(a, try freeRegion(a, at, end - at));
     return out.items;
 }
-fn allowed(r: Region, kind: w.IntentKind) bool {
+fn allowed(r: Region, kind: wire.IntentKind) bool {
     if (r.free) return true;
     if (r.protected or r.encryption != .none) return false;
     for (r.capabilities) |c| if (c.operation == kind and c.support != .unavailable) return true;
     return false;
 }
-fn indexOf(layout: []const w.DesiredPartition, id: []const u8) !usize {
+fn indexOf(layout: []const wire.DesiredPartition, id: []const u8) !usize {
     for (layout, 0..) |p, i| if (std.mem.eql(u8, p.id, id)) return i;
     return error.PartitionNotFound;
 }
-fn geometry(a: Allocator, layout: []w.DesiredPartition, r: Region, offset: u64, length: u64) !void {
+fn geometry(a: Allocator, layout: []wire.DesiredPartition, r: Region, offset: u64, length: u64) !void {
     if (r.free) return;
     const i = try indexOf(layout, r.id);
     layout[i].offset = try a.print("{d}", .{offset});
     layout[i].length = try a.print("{d}", .{length});
 }
-pub fn edit(a: Allocator, io: std.Io, snapshot: w.InventorySnapshot, request: Request) !Result {
+pub fn edit(a: Allocator, io: std.Io, snapshot: wire.InventorySnapshot, request: Request) !Result {
     if (request.version != proto.API_VERSION or snapshot.version != proto.API_VERSION) return error.UnsupportedProtocolVersion;
     if (!std.mem.eql(u8, request.snapshot_id, snapshot.snapshot_id)) return error.StaleInventory;
     _ = try proto.hexDigest(request.disk_identity);
@@ -132,12 +132,12 @@ pub fn edit(a: Allocator, io: std.Io, snapshot: w.InventorySnapshot, request: Re
         if (d.identity) |id| if (std.mem.eql(u8, id, request.disk_identity)) break d;
     } else return error.DiskIdentityNotFound;
     if (disk.read_only or !std.mem.eql(u8, disk.partition_table orelse "", "gpt")) return error.DiskNotEditable;
-    var layout: std.ArrayList(w.DesiredPartition) = .empty;
+    var layout: std.ArrayList(wire.DesiredPartition) = .empty;
     if (request.layout) |items| {
         if (items.len > Limits.PARTITIONS) return error.PlanTooLarge;
         try layout.appendSlice(a, items);
     } else for (disk.partitions) |p| try layout.append(a, retained(p));
-    std.mem.sort(w.DesiredPartition, layout.items, {}, less);
+    std.mem.sort(wire.DesiredPartition, layout.items, {}, less);
     const spans = try regions(a, disk, layout.items);
     var selected: ?[]const u8 = null;
     if (request.command) |cmd| {
@@ -145,7 +145,7 @@ pub fn edit(a: Allocator, io: std.Io, snapshot: w.InventorySnapshot, request: Re
             if (std.mem.eql(u8, r.id, cmd.partition_id)) break i;
         } else return error.PartitionNotFound;
         const r = spans[ri];
-        const kind: w.IntentKind = switch (cmd.kind) {
+        const kind: wire.IntentKind = switch (cmd.kind) {
             .resize, .add_left, .add_right => .resize,
             .delete => .delete,
             .format => .format,
@@ -157,8 +157,13 @@ pub fn edit(a: Allocator, io: std.Io, snapshot: w.InventorySnapshot, request: Re
         const sector: u64 = disk.sector_size;
         selected = r.id;
         switch (cmd.kind) {
-            .resize => {
-                if (ri + 1 == spans.len) return error.NoAdjacentRegion;
+            .resize => resize: {
+                if (ri + 1 == spans.len) {
+                    const n = (try proto.byteCount(cmd.length orelse return error.MissingLength)) / sector * sector;
+                    if (r.free or n < sector or n > length) return error.InvalidPartitionRange;
+                    try geometry(a, layout.items, r, offset, n);
+                    break :resize;
+                }
                 const right = spans[ri + 1];
                 if (!allowed(right, .resize)) return error.OperationUnavailable;
                 const total = try std.math.add(u64, length, try proto.byteCount(right.length));
@@ -200,19 +205,19 @@ pub fn edit(a: Allocator, io: std.Io, snapshot: w.InventorySnapshot, request: Re
             },
         }
     }
-    std.mem.sort(w.DesiredPartition, layout.items, {}, less);
+    std.mem.sort(wire.DesiredPartition, layout.items, {}, less);
     return .{ .draft = try generate(a, snapshot, disk, layout.items), .regions = try regions(a, disk, layout.items), .selected = selected };
 }
 
 const TestCapabilities = struct {
-    pub fn validLabel(_: @This(), _: Allocator, _: w.FilesystemKind, _: []const u8) !bool {
+    pub fn validLabel(_: @This(), _: Allocator, _: wire.FilesystemKind, _: []const u8) !bool {
         return true;
     }
-    pub fn canFs(_: @This(), _: Allocator, _: w.FilesystemKind, _: w.IntentKind, _: bool, _: bool) !bool {
+    pub fn canFs(_: @This(), _: Allocator, _: wire.FilesystemKind, _: wire.IntentKind, _: bool, _: bool) !bool {
         return true;
     }
 };
-fn fixture() w.InventorySnapshot {
+fn fixture() wire.InventorySnapshot {
     return .{ .version = proto.API_VERSION, .snapshot_id = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", .platform = .windows, .disks = &.{.{
         .identity = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         .path = "test-only",
@@ -231,7 +236,7 @@ fn fixture() w.InventorySnapshot {
         } }},
     }} };
 }
-fn editRequest(s: w.InventorySnapshot, layout: ?[]const w.DesiredPartition, command: ?Command) Request {
+fn editRequest(s: wire.InventorySnapshot, layout: ?[]const wire.DesiredPartition, command: ?Command) Request {
     return .{ .version = s.version, .snapshot_id = s.snapshot_id, .disk_identity = s.disks[0].identity.?, .layout = layout, .command = command };
 }
 test "backend edits resize, format, label, create and delete without UI or system imports" {
@@ -255,7 +260,8 @@ test "backend edits resize, format, label, create and delete without UI or syste
     const requested_label = try a.dupe(u8, &std.fmt.bytesToHex(random_label, .lower));
     const labeled = try edit(a, std.testing.io, s, editRequest(s, formatted.draft.layout, .{ .kind = .label, .partition_id = id, .name = requested_label }));
     try std.testing.expectEqualStrings(requested_label, labeled.draft.layout[0].name);
-    try std.testing.expectEqual(.label, labeled.draft.intents[1].kind);
+    try std.testing.expectEqual(.format, labeled.draft.intents[1].kind);
+    try std.testing.expectEqual(2, labeled.draft.intents.len);
     const cleared = try edit(a, std.testing.io, s, editRequest(s, labeled.draft.layout, .{ .kind = .label, .partition_id = id, .name = "" }));
     try std.testing.expectEqualStrings("", cleared.draft.layout[0].name);
     try std.testing.expectEqual(2, cleared.draft.intents.len);
@@ -264,10 +270,10 @@ test "backend edits resize, format, label, create and delete without UI or syste
     try std.testing.expectEqualStrings("", added.name);
     try std.testing.expectEqualStrings(added.id, try identity.partition(a, s.disks[0].identity.?, added.partition_uuid.?));
     try std.testing.expectEqualStrings("a2a0d0ebe5b9334487c068b6b72699c7", added.type_guid.?);
-    try std.testing.expectEqual(.create, created.draft.intents[3].kind);
+    try std.testing.expectEqual(.create, created.draft.intents[2].kind);
     const removed = try edit(a, std.testing.io, s, editRequest(s, created.draft.layout, .{ .kind = .delete, .partition_id = added.id }));
     try std.testing.expectEqual(1, removed.draft.layout.len);
-    try std.testing.expectEqual(3, removed.draft.intents.len);
+    try std.testing.expectEqual(2, removed.draft.intents.len);
     const empty = try edit(a, std.testing.io, s, editRequest(s, removed.draft.layout, .{ .kind = .delete, .partition_id = id }));
     try std.testing.expectEqual(.delete, empty.draft.intents[0].kind);
     try std.testing.expectEqual(1, empty.regions.len);
@@ -307,10 +313,10 @@ test "backend rejects stale inventory, forged geometry, oversized layouts and un
     try std.testing.expectError(error.Overflow, edit(a, std.testing.io, s, editRequest(s, &.{bad}, null)));
     bad = retained(s.disks[0].partitions[0]);
     try std.testing.expectError(error.DuplicatePartition, edit(a, std.testing.io, s, editRequest(s, &.{ bad, bad }, null)));
-    const huge = try a.alloc(w.DesiredPartition, Limits.PARTITIONS + 1);
+    const huge = try a.alloc(wire.DesiredPartition, Limits.PARTITIONS + 1);
     try std.testing.expectError(error.PlanTooLarge, edit(a, std.testing.io, s, editRequest(s, huge, null)));
-    var parts = try a.dupe(w.HostPartition, s.disks[0].partitions);
-    var disks = try a.dupe(w.HostDisk, s.disks);
+    var parts = try a.dupe(wire.HostPartition, s.disks[0].partitions);
+    var disks = try a.dupe(wire.HostDisk, s.disks);
     disks[0].partitions = parts;
     var locked = s;
     locked.disks = disks;
@@ -326,7 +332,7 @@ test "backend keeps uint64 geometry exact above JavaScript Number range" {
     defer arena.deinit();
     const a = arena.allocator();
     var s = fixture();
-    var disks = try a.dupe(w.HostDisk, s.disks);
+    var disks = try a.dupe(wire.HostDisk, s.disks);
     disks[0].capacity = "18446744073709547520";
     disks[0].usable_length = "18446744073707450368";
     disks[0].partitions = &.{};
@@ -338,12 +344,12 @@ test "backend keeps uint64 geometry exact above JavaScript Number range" {
 }
 
 test "editing is independent of fixture size, filesystem and logical sector geometry" {
-    for ([_]u32{ 512, 4096, 8192 }) |sector| for (std.meta.tags(w.FilesystemKind)) |fs| {
+    for ([_]u32{ 512, 4096, 8192 }) |sector| for (std.meta.tags(wire.FilesystemKind)) |fs| {
         var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
         defer arena.deinit();
         const a = arena.allocator();
         var snapshot = fixture();
-        var disks = try a.dupe(w.HostDisk, snapshot.disks);
+        var disks = try a.dupe(wire.HostDisk, snapshot.disks);
         const start: u64 = @as(u64, sector) * 257;
         const usable: u64 = @as(u64, sector) * 4099;
         disks[0].sector_size = sector;
@@ -365,4 +371,20 @@ test "editing is independent of fixture size, filesystem and logical sector geom
         try std.testing.expectEqual(0, removed.draft.intents.len);
         try std.testing.expectEqual(usable, try proto.byteCount(removed.regions[0].length));
     };
+}
+
+test "the last allocated partition can shrink without an existing free region" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var snapshot = fixture();
+    const disks = try a.dupe(wire.HostDisk, snapshot.disks);
+    const parts = try a.dupe(wire.HostPartition, disks[0].partitions);
+    parts[0].length = disks[0].usable_length.?;
+    disks[0].partitions = parts;
+    snapshot.disks = disks;
+    const result = try edit(a, std.testing.io, snapshot, editRequest(snapshot, null, .{ .kind = .resize, .partition_id = parts[0].id, .length = "4194304" }));
+    try std.testing.expectEqual(2, result.regions.len);
+    try std.testing.expect(result.regions[1].free);
+    try std.testing.expectEqualStrings("4194304", result.regions[1].length);
 }

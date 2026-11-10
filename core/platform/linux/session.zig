@@ -1,7 +1,7 @@
 //! Linux session boundary: authentication, one execution worker and its durable store.
 const Session = @This();
 const std = @import("std");
-const c = @import("libc");
+const libc = @import("libc");
 const client = @import("session/client.zig");
 const Worker = @import("../../execution/worker.zig");
 const Store = @import("session/store.zig");
@@ -12,7 +12,7 @@ worker: Worker = .{},
 store: Store = .{},
 
 pub fn isPrivileged(_: *const Session) bool {
-    return c.geteuid() == 0;
+    return libc.geteuid() == 0;
 }
 pub fn readiness(_: *const Session) client.Readiness {
     return client.readiness();
@@ -32,7 +32,7 @@ const Server = struct {
 
     fn serveClient(self: *Server, fd: c_int) void {
         defer _ = self.clients.fetchSub(1, .release);
-        defer _ = c.close(fd);
+        defer _ = libc.close(fd);
         var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
         defer arena.deinit();
         const a = arena.allocator();
@@ -41,16 +41,16 @@ const Server = struct {
         _ = transport.sendAll(fd, self.handler(self.context, a, bytes[65..]));
     }
 };
-pub fn serve(self: *Session, context: ?*anyopaque, handler: Handler) !u8 {
+pub fn serve(self: *Session, io: std.Io, context: ?*anyopaque, handler: Handler) !u8 {
     const worker = &self.worker;
     const store = &self.store;
-    if (c.geteuid() != 0) return 1;
-    _ = c.setenv("PATH", "/usr/sbin:/usr/bin:/sbin:/bin", 1);
-    _ = c.signal(c.SIGPIPE, c.SIG_IGN);
-    var user = c.getenv("PKEXEC_UID");
-    if (user == null or user[0] == 0) user = c.getenv("SUDO_UID");
+    if (libc.geteuid() != 0) return 1;
+    _ = libc.setenv("PATH", "/usr/sbin:/usr/bin:/sbin:/bin", 1);
+    _ = libc.signal(libc.SIGPIPE, libc.SIG_IGN);
+    var user = libc.getenv("PKEXEC_UID");
+    if (user == null or user[0] == 0) user = libc.getenv("SUDO_UID");
     if (user == null) return 1;
-    const owner = std.fmt.parseInt(c.uid_t, std.mem.span(user), 10) catch return 1;
+    const owner = std.fmt.parseInt(libc.uid_t, std.mem.span(user), 10) catch return 1;
     if (owner == 0) return 1;
     var input: [65]u8 = undefined;
     if (!transport.readExact(0, &input) or input[64] != '\n' or !validId(input[0..64])) return 1;
@@ -60,36 +60,41 @@ pub fn serve(self: *Session, context: ?*anyopaque, handler: Handler) !u8 {
     const dir = try std.mem.printSentinel(&dir_buffer, "/run/pizza/{d}", .{owner}, 0);
     if (!Store.directory("/run/pizza", 0o711) or !Store.directory(dir, 0o711)) return 1;
     var lock_buffer: [160]u8 = undefined;
-    const lease = c.open(try std.mem.printSentinel(&lock_buffer, "{s}/worker.lock", .{dir}, 0), c.O_CREAT | c.O_RDWR | c.O_CLOEXEC | c.O_NOFOLLOW, @as(c.mode_t, 0o600));
+    const lease = libc.open(try std.mem.printSentinel(&lock_buffer, "{s}/worker.lock", .{dir}, 0), libc.O_CREAT | libc.O_RDWR | libc.O_CLOEXEC | libc.O_NOFOLLOW, @as(libc.mode_t, 0o600));
     if (lease < 0) return 1;
-    defer _ = c.close(lease);
-    if (c.flock(lease, c.LOCK_EX | c.LOCK_NB) != 0) return 1;
-    const fd = c.socket(c.AF_UNIX, c.SOCK_STREAM | c.SOCK_CLOEXEC, 0);
+    defer _ = libc.close(lease);
+    if (libc.flock(lease, libc.LOCK_EX | libc.LOCK_NB) != 0) return 1;
+    const fd = libc.socket(libc.AF_UNIX, libc.SOCK_STREAM | libc.SOCK_CLOEXEC, 0);
     if (fd < 0) return 1;
-    defer _ = c.close(fd);
+    defer _ = libc.close(fd);
     var sock_buffer: [108]u8 = undefined;
     const sock = try std.mem.printSentinel(&sock_buffer, "{s}/control.sock", .{dir}, 0);
-    _ = c.unlink(sock);
+    _ = libc.unlink(sock);
     var addr = try transport.address(sock);
-    if (c.bind(fd, .{ .__sockaddr_un__ = &addr }, @sizeOf(@TypeOf(addr))) != 0 or c.chown(sock, owner, 0) != 0 or c.chmod(sock, 0o600) != 0 or c.listen(fd, 8) != 0) return 1;
-    defer _ = c.unlink(sock);
+    if (libc.bind(fd, .{ .__sockaddr_un__ = &addr }, @sizeOf(@TypeOf(addr))) != 0 or libc.chown(sock, owner, 0) != 0 or libc.chmod(sock, 0o600) != 0 or libc.listen(fd, 8) != 0) return 1;
+    defer _ = libc.unlink(sock);
     if (!transport.writeAll(1, "READY\n")) return 1;
+    defer worker.wait(io);
     while (true) {
-        var poll: c.struct_pollfd = .{ .fd = fd, .events = c.POLLIN, .revents = 0 };
-        const ready = c.poll(&poll, 1, 300_000);
+        var poll: libc.struct_pollfd = .{ .fd = fd, .events = libc.POLLIN, .revents = 0 };
+        const ready = libc.poll(&poll, 1, 300_000);
         if (ready == 0 and server.clients.load(.acquire) == 0 and !worker.busy()) break;
         if (ready <= 0) continue;
-        const connection = c.accept4(fd, .{ .__sockaddr__ = null }, null, c.SOCK_CLOEXEC);
+        const connection = libc.accept4(fd, .{ .__sockaddr__ = null }, null, libc.SOCK_CLOEXEC);
         if (connection < 0) continue;
         if (!transport.peerIs(connection, owner) or server.clients.load(.acquire) >= 16) {
-            _ = c.close(connection);
+            _ = libc.close(connection);
             continue;
         }
-        transport.deadline(connection);
+        transport.deadline(connection) catch |err| {
+            std.log.err("Cannot bound session connection I/O: {t}", .{err});
+            _ = libc.close(connection);
+            continue;
+        };
         _ = server.clients.fetchAdd(1, .acq_rel);
         if (std.Thread.spawn(.{}, Server.serveClient, .{ &server, connection })) |thread| thread.detach() else |_| {
             _ = server.clients.fetchSub(1, .release);
-            _ = c.close(connection);
+            _ = libc.close(connection);
         }
     }
     return 0;
@@ -114,15 +119,15 @@ test "IPC authenticates the peer and nonce before dispatching a complete request
     };
     for (cases, 0..) |request, index| {
         var pair: [2]c_int = undefined;
-        try std.testing.expectEqual(@as(c_int, 0), c.socketpair(c.AF_UNIX, c.SOCK_STREAM | c.SOCK_CLOEXEC, 0, &pair));
-        defer _ = c.close(pair[0]);
-        try std.testing.expect(transport.peerIs(pair[0], c.geteuid()));
-        try std.testing.expect(!transport.peerIs(pair[0], if (c.geteuid() == 0) 1 else 0));
+        try std.testing.expectEqual(@as(c_int, 0), libc.socketpair(libc.AF_UNIX, libc.SOCK_STREAM | libc.SOCK_CLOEXEC, 0, &pair));
+        defer _ = libc.close(pair[0]);
+        try std.testing.expect(transport.peerIs(pair[0], libc.geteuid()));
+        try std.testing.expect(!transport.peerIs(pair[0], if (libc.geteuid() == 0) 1 else 0));
         _ = server.clients.fetchAdd(1, .acq_rel);
         const thread = try std.Thread.spawn(.{}, Server.serveClient, .{ &server, pair[1] });
         defer thread.join();
         try std.testing.expect(transport.sendAll(pair[0], request));
-        try std.testing.expectEqual(@as(c_int, 0), c.shutdown(pair[0], c.SHUT_WR));
+        try std.testing.expectEqual(@as(c_int, 0), libc.shutdown(pair[0], libc.SHUT_WR));
         const reply = try transport.readBounded(a, pair[0], 256);
         defer a.free(reply);
         try std.testing.expectEqualStrings(if (index == 0) "{\"action\":\"status\"}" else "", reply);

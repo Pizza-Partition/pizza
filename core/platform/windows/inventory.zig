@@ -1,27 +1,36 @@
 //! Join native GPT geometry to Storage Management partitions and volumes.
 const std = @import("std");
 const proto = @import("proto");
-const w = proto.wire;
-const n = @import("native.zig");
+const wire = proto.wire;
+const native = @import("native.zig");
 const wmi = @import("wmi.zig");
 const policy = @import("policy.zig");
-const basic_data = n.win32.zig.Guid.initString(@import("../../planning/identity.zig").Gpt.BASIC_DATA_GUID);
+const BASIC_DATA = native.win32.zig.Guid.initString(@import("../../planning/identity.zig").Gpt.BASIC_DATA_GUID);
 
-fn partition(a: std.mem.Allocator, connection: wmi.Connection, crypt: EncryptionInventory, disk: w.HostDisk, disk_number: u32, raw: n.win32.system.ioctl.PARTITION_INFORMATION_EX) !w.HostPartition {
+fn partition(
+    a: std.mem.Allocator,
+    connection: wmi.Connection,
+    crypt: EncryptionInventory,
+    disk: wire.HostDisk,
+    disk_number: u32,
+    raw: native.win32.system.ioctl.PARTITION_INFORMATION_EX,
+    gpt_slot: u32,
+) !wire.HostPartition {
     const gpt = raw.Anonymous.Gpt;
-    const uuid = try n.guid(a, gpt.PartitionId);
+    const uuid = try native.guid(a, gpt.PartitionId);
     var state: policy.State = .{};
-    state.protected = !std.mem.eql(u8, std.mem.asBytes(&gpt.PartitionType), std.mem.asBytes(&basic_data)) or gpt.Attributes.ATTRIBUTE_PLATFORM_REQUIRED != 0;
-    var result: w.HostPartition = .{
+    state.protected = !std.mem.eql(u8, std.mem.asBytes(&gpt.PartitionType), std.mem.asBytes(&BASIC_DATA)) or gpt.Attributes.ATTRIBUTE_PLATFORM_REQUIRED != 0;
+
+    var result: wire.HostPartition = .{
         .id = try @import("../../planning/identity.zig").partition(a, disk.identity.?, uuid),
         .offset = try a.print("{d}", .{raw.StartingOffset.QuadPart}),
         .length = try a.print("{d}", .{raw.PartitionLength.QuadPart}),
         .name = "", // Populated only from the associated volume's filesystem label.
         .encryption = .unknown,
         .partition_uuid = uuid,
-        .type_guid = try n.guid(a, gpt.PartitionType),
+        .type_guid = try native.guid(a, gpt.PartitionType),
         .attributes = try a.print("{d}", .{@as(u64, @bitCast(gpt.Attributes))}),
-        .slot = raw.PartitionNumber -| 1,
+        .slot = gpt_slot,
     };
     var parts = try connection.query(a, try a.print("SELECT * FROM MSFT_Partition WHERE DiskNumber = {d} AND PartitionNumber = {d}", .{ disk_number, raw.PartitionNumber }));
     defer parts.deinit();
@@ -45,7 +54,7 @@ fn partition(a: std.mem.Allocator, connection: wmi.Connection, crypt: Encryption
             state.healthy = (volume.number("HealthStatus") catch 2) == 0;
             if (result.path) |path| {
                 state.encrypted = crypt.lookup(path);
-                state.simple = n.simpleVolume(a, path, disk_number, @intCast(raw.StartingOffset.QuadPart), @intCast(raw.PartitionLength.QuadPart));
+                state.simple = native.simpleVolume(a, path, disk_number, @intCast(raw.StartingOffset.QuadPart), @intCast(raw.PartitionLength.QuadPart));
             }
             const size = volume.number("Size") catch 0;
             const free = volume.number("SizeRemaining") catch 0;
@@ -69,20 +78,20 @@ fn partition(a: std.mem.Allocator, connection: wmi.Connection, crypt: Encryption
     result.capabilities = try policy.capabilities(a, state);
     return result;
 }
-pub fn query(a: std.mem.Allocator, _: std.Io) !w.InventorySnapshot {
-    var failure: wmi.Failure = .{};
-    const apartment = try wmi.Apartment.init(&failure);
+
+pub fn query(a: std.mem.Allocator, _: std.Io) !wire.InventorySnapshot {
+    const apartment = try wmi.ComScope.init();
     defer apartment.deinit();
-    const connection = try wmi.Connection.init(a, wmi.STORAGE_NAMESPACE, &failure);
+    const connection = try wmi.Connection.init(a, wmi.STORAGE_NAMESPACE);
     defer connection.deinit();
     const crypt = try EncryptionInventory.query(a);
     var objects = try connection.query(a, "SELECT * FROM MSFT_Disk");
     defer objects.deinit();
-    var disks: std.ArrayList(w.HostDisk) = .empty;
+    var disks: std.ArrayList(wire.HostDisk) = .empty;
     while (try objects.next()) |object| {
         defer object.deinit();
         const number = std.math.cast(u32, try object.number("Number")) orelse return error.InvalidWindowsNumber;
-        var disk: w.HostDisk = .{
+        var disk: wire.HostDisk = .{
             .path = (try object.text(a, "Path")) orelse return error.WindowsDevicePathUnavailable,
             .capacity = try a.print("{d}", .{try object.number("Size")}),
             .sector_size = std.math.cast(u32, try object.number("LogicalSectorSize")) orelse return error.InvalidWindowsNumber,
@@ -95,15 +104,15 @@ pub fn query(a: std.mem.Allocator, _: std.Io) !w.InventorySnapshot {
                 else => "raw",
             },
         };
-        const handle = n.open(a, disk.path, n.GENERIC_READ) catch {
+        const handle = native.open(a, disk.path, native.GENERIC_READ) catch {
             disk.read_only = true;
             disk.diagnostics = &.{.{ .code = "windows_layout_access_required", .severity = .warning, .message = "Administrator access is required to read the full disk layout." }};
             try disks.append(a, disk);
             continue;
         };
-        defer n.close(handle);
-        if (try n.deviceNumber(handle) != number) return error.WindowsDiskMappingChanged;
-        const layout = n.readLayout(a, handle) catch {
+        defer _ = native.kernel32.CloseHandle(handle);
+        if (try native.deviceNumber(handle) != number) return error.WindowsDiskMappingChanged;
+        const layout = native.readLayout(a, handle) catch {
             disk.read_only = true;
             disk.diagnostics = &.{.{ .code = "windows_layout_unavailable", .severity = .warning, .message = "Native disk layout could not be verified." }};
             try disks.append(a, disk);
@@ -126,17 +135,20 @@ pub fn query(a: std.mem.Allocator, _: std.Io) !w.InventorySnapshot {
             hash.update(std.mem.asBytes(&disk.sector_size));
             const capacity = try proto.byteCount(disk.capacity);
             hash.update(std.mem.asBytes(&capacity));
-            const portable = n.maintenanceIdentity(a, handle) catch null;
+            const portable = native.maintenanceIdentity(a, handle) catch null;
             const disk_id = portable orelse hash.finalResult();
             disk.identity = try a.dupe(u8, &std.fmt.bytesToHex(disk_id, .lower));
             if (portable == null) disk.diagnostics = &.{.{ .code = "maintenance_identity_unavailable", .severity = .warning, .message = "The storage driver exposes no unambiguous portable NAA/EUI identifier; only Windows host operations are available." }};
             disk.usable_offset = try a.print("{d}", .{gpt.StartingUsableOffset.QuadPart});
             disk.usable_length = try a.print("{d}", .{gpt.UsableLength.QuadPart});
-            var parts: std.ArrayList(w.HostPartition) = .empty;
+            var parts: std.ArrayList(wire.HostPartition) = .empty;
+            const raw_gpt = try native.readGpt(a, handle, disk.sector_size, capacity);
+            defer raw_gpt.deinit(a);
             for (layout.entries) |p| {
                 if (p.PartitionStyle != .GPT or p.PartitionLength.QuadPart == 0) continue;
                 if (p.StartingOffset.QuadPart < 0 or p.PartitionLength.QuadPart < 0 or p.PartitionNumber == 0) return error.InvalidWindowsDiskLayout;
-                try parts.append(a, try partition(a, connection, crypt, disk, number, p));
+                const gpt_slot = try @import("../../planning/gpt.zig").slot(raw_gpt.bytes, raw_gpt.info, std.mem.asBytes(&p.Anonymous.Gpt.PartitionId), @intCast(p.StartingOffset.QuadPart), @intCast(p.PartitionLength.QuadPart));
+                try parts.append(a, try partition(a, connection, crypt, disk, number, p, gpt_slot));
             }
             disk.partitions = try parts.toOwnedSlice(a);
         } else disk.read_only = true;
@@ -155,7 +167,7 @@ pub fn query(a: std.mem.Allocator, _: std.Io) !w.InventorySnapshot {
         disk.read_only = true;
         disk.diagnostics = &.{.{ .code = "ambiguous_windows_disk_identity", .severity = .warning, .message = "Multiple disks report the same identity; writes are disabled." }};
     }
-    var result: w.InventorySnapshot = .{ .version = proto.API_VERSION, .snapshot_id = "", .platform = .windows, .disks = try disks.toOwnedSlice(a), .diagnostics = if (crypt.complete) &.{} else &.{.{ .code = "windows_encryption_detection_unavailable", .severity = .warning, .message = "Encryption detection is unavailable; affected volumes remain non-writable." }} };
+    var result: wire.InventorySnapshot = .{ .version = proto.API_VERSION, .snapshot_id = "", .platform = .windows, .disks = try disks.toOwnedSlice(a), .diagnostics = if (crypt.complete) &.{} else &.{.{ .code = "windows_encryption_detection_unavailable", .severity = .warning, .message = "Encryption detection is unavailable; affected volumes remain non-writable." }} };
     result.snapshot_id = try @import("../../planning/identity.zig").fingerprint(a, result);
     return result;
 }
@@ -170,8 +182,7 @@ const EncryptionInventory = struct {
         return if (self.complete) .none else .unknown;
     }
     fn query(a: std.mem.Allocator) !EncryptionInventory {
-        var failure: wmi.Failure = .{};
-        const connection = wmi.Connection.init(a, wmi.BITLOCKER_NAMESPACE, &failure) catch return .{};
+        const connection = wmi.Connection.init(a, wmi.BITLOCKER_NAMESPACE) catch return .{};
         defer connection.deinit();
         var objects = connection.query(a, "SELECT * FROM Win32_EncryptableVolume") catch return .{};
         defer objects.deinit();

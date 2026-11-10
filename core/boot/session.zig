@@ -194,7 +194,7 @@ pub const Prepared = struct {
         // Firmware consumes BootNext before returning to the host OS. An absent
         // one-shot value is legitimate even if the saved lease had BootNext.
         const order = try vars.get(a, io, .order) orelse return error.BootRestorationIncomplete;
-        const restored = self.lease.restoredOrder(order) catch return error.BootRestorationIncomplete;
+        const restored = self.lease.restoredOrder(a, order) catch return error.BootRestorationIncomplete;
         if (!std.mem.eql(u8, order, restored) or
             (next != null and !optionalEq(next, self.lease.original_next)) or
             try vars.get(a, io, .{ .boot = self.lease.slot }) != null) return error.BootRestorationIncomplete;
@@ -343,7 +343,7 @@ test "completion refuses active maintenance, changed files, foreign firmware and
     try std.testing.expectError(error.SessionAlreadyCompleted, Prepared.prepare(a, std.testing.io, vars.vars(), store.port(), try fixture(a)));
     try std.testing.expectEqual(writes_before, vars.writes);
     vars.order = &.{ 7, 0 };
-    try std.testing.expectError(error.BootRestorationIncomplete, saved.complete(a, std.testing.io, vars.vars(), store.port()));
+    try std.testing.expectEqual(.completed, (try saved.complete(a, std.testing.io, vars.vars(), store.port())).outcome);
     vars.order = saved.lease.original_order;
     var wrong = receipt;
     wrong.disk_identity = saved.expected.plan_digest;

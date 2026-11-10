@@ -1,6 +1,6 @@
 //! Native imports are compiled on Windows; pure policy tests also run on Linux.
 test {
-    _ = @import("../core/platform/windows/firmware.zig");
+    _ = @import("../core/platform/windows/uefi.zig");
     _ = @import("../core/platform/windows/esp.zig");
     _ = @import("../core/platform/windows/policy.zig");
     _ = @import("../core/platform/windows/session.zig");
@@ -17,7 +17,7 @@ test "Windows VPD descriptor may end with a bounded nonzero NextOffset" {
     std.mem.writeInt(u16, bytes[58..60], 29, .little);
     try std.testing.expectError(error.InvalidStorageIdentifiers, @import("../core/platform/windows/native.zig").portableWwid(std.testing.allocator, &bytes));
 }
-const n = @import("../core/platform/windows/native.zig");
+const native = @import("../core/platform/windows/native.zig");
 const security = @import("../core/platform/windows/session/security.zig");
 const transport = @import("../core/platform/windows/session/transport.zig");
 
@@ -41,16 +41,16 @@ test "portable storage IDs ignore port identifiers and reject malformed descript
         @memset(entry[16..24], @intCast(i + 1));
         entry[16] = 0x50;
     }
-    try std.testing.expectEqualStrings("naa.5002020202020202", (try n.portableWwid(a, &bytes)).?);
+    try std.testing.expectEqualStrings("naa.5002020202020202", (try native.portableWwid(a, &bytes)).?);
     var invalid = bytes;
     std.mem.writeInt(u16, invalid[22..24], 4, .little);
-    try std.testing.expectError(error.InvalidStorageIdentifiers, n.portableWwid(a, &invalid));
+    try std.testing.expectError(error.InvalidStorageIdentifiers, native.portableWwid(a, &invalid));
     invalid = bytes;
     std.mem.writeInt(u16, invalid[44..46], 65535, .little);
-    try std.testing.expectError(error.InvalidStorageIdentifiers, n.portableWwid(a, &invalid));
+    try std.testing.expectError(error.InvalidStorageIdentifiers, native.portableWwid(a, &invalid));
     invalid = bytes;
     std.mem.writeInt(u32, invalid[72..76], 0, .little); // another device NAA
-    try std.testing.expectError(error.AmbiguousStorageIdentity, n.portableWwid(a, &invalid));
+    try std.testing.expectError(error.AmbiguousStorageIdentity, native.portableWwid(a, &invalid));
 }
 
 test "WMI inventory joins geometry without changing any disk" {
@@ -71,21 +71,23 @@ test "pipe framing handles fragmentation and rejects oversized frames" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const path = try n.wide(a, try a.print("\\\\.\\pipe\\Pizza-test-{d}-{d}", .{ n.k.GetCurrentProcessId(), n.k.GetTickCount64() }));
-    const pipe = n.valid(n.k.CreateNamedPipeW(path, n.PIPE_SERVER_FLAGS, .{ .NOWAIT = 1, .REJECT_REMOTE_CLIENTS = 1 }, 1, 128, 128, 0, null)) orelse return error.PipeUnavailable;
-    defer n.close(pipe);
-    const h = n.valid(n.k.CreateFileW(path, @bitCast(n.GENERIC_READ | n.GENERIC_WRITE), .{}, null, .OPEN_EXISTING, n.fs.SECURITY_SQOS_PRESENT, null)) orelse return error.PipeUnavailable;
-    defer n.close(h);
-    defer _ = n.k.DisconnectNamedPipe(pipe);
-    _ = n.k.ConnectNamedPipe(pipe, null);
-    var mode: n.win32.system.pipes.NAMED_PIPE_MODE = .{ .NOWAIT = 1 };
-    try std.testing.expect(n.k.SetNamedPipeHandleState(h, &mode, null, null) != 0);
+    const path = try native.wide(a, try a.print("\\\\.\\pipe\\Pizza-test-{d}-{d}", .{ native.kernel32.GetCurrentProcessId(), native.kernel32.GetTickCount64() }));
+    const pipe = native.kernel32.CreateNamedPipeW(path, native.PIPE_SERVER_FLAGS, .{ .NOWAIT = 1, .REJECT_REMOTE_CLIENTS = 1 }, 1, 128, 128, 0, null);
+    if (pipe == native.foundation.INVALID_HANDLE_VALUE) return error.PipeUnavailable;
+    defer _ = native.kernel32.CloseHandle(pipe);
+    const h = native.kernel32.CreateFileW(path, @bitCast(native.GENERIC_READ | native.GENERIC_WRITE), .{}, null, .OPEN_EXISTING, native.fs.SECURITY_SQOS_PRESENT, null);
+    if (h == native.foundation.INVALID_HANDLE_VALUE) return error.PipeUnavailable;
+    defer _ = native.kernel32.CloseHandle(h);
+    defer _ = native.kernel32.DisconnectNamedPipe(pipe);
+    _ = native.kernel32.ConnectNamedPipe(pipe, null);
+    var mode: native.win32.system.pipes.NAMED_PIPE_MODE = .{ .NOWAIT = 1 };
+    try std.testing.expect(native.kernel32.SetNamedPipeHandleState(h, &mode, null, null) != 0);
     const Fragmented = struct {
-        fn write(handle: n.f.HANDLE) void {
+        fn write(handle: native.foundation.HANDLE) void {
             transport.writeAll(handle, &.{ 5, 0 }, transport.deadline()) catch return;
-            n.k.Sleep(20);
+            native.kernel32.Sleep(20);
             transport.writeAll(handle, &.{ 0, 0, 'h' }, transport.deadline()) catch return;
-            n.k.Sleep(20);
+            native.kernel32.Sleep(20);
             transport.writeAll(handle, "ello", transport.deadline()) catch {};
         }
     };
@@ -100,11 +102,11 @@ test "kernel peer credentials distinguish processes and exact executable identit
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const owner = try security.identity(a, n.k.GetCurrentProcess());
-    try security.peer(a, n.k.GetCurrentProcessId(), owner, owner.elevated);
+    const owner = try security.identity(a, native.kernel32.GetCurrentProcess());
+    try security.peer(a, native.kernel32.GetCurrentProcessId(), owner, owner.elevated);
     var other = owner;
     other.session +%= 1;
-    try std.testing.expectError(error.UnauthorizedPeer, security.peer(a, n.k.GetCurrentProcessId(), other, false));
+    try std.testing.expectError(error.UnauthorizedPeer, security.peer(a, native.kernel32.GetCurrentProcessId(), other, false));
     try std.testing.expectError(error.PeerUnavailable, security.peer(a, 0, owner, false));
 }
 test "durable records are replaced atomically and reject public files" {

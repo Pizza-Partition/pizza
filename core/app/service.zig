@@ -1,7 +1,7 @@
 //! Application requests and authorization routing; no WebUI or operating-system APIs.
 const std = @import("std");
 const proto = @import("proto");
-const w = proto.wire;
+const wire = proto.wire;
 const coordinator = @import("coordinator.zig");
 pub const MAX_BYTES = 4 * 1024 * 1024;
 pub const Access = enum { local, privileged };
@@ -24,9 +24,11 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             const request = try std.json.parseFromSliceLeaky(editor.Request, a, bytes, .{});
             if (request.version != proto.API_VERSION) return error.UnsupportedProtocolVersion;
             const snapshot = if (request.elevated and !self.sessions.isPrivileged()) blk: {
-                const message = try std.json.Stringify.valueAlloc(a, w.PrivilegedRequest{ .version = proto.API_VERSION, .action = .inventory, .elevated = true }, .{ .emit_null_optional_fields = false });
+                const message = try std.json.Stringify.valueAlloc(a, wire.PrivilegedRequest{ .version = proto.API_VERSION, .action = .inventory, .elevated = true }, .{ .emit_null_optional_fields = false });
                 const response = try self.dispatch(a, message, .local);
-                break :blk try std.json.parseFromSliceLeaky(w.InventorySnapshot, a, response, .{});
+                const envelope = try std.json.parseFromSliceLeaky(std.json.Value, a, response, .{});
+                if (envelope == .object and envelope.object.get("error") != null) return response;
+                break :blk try std.json.parseFromSliceLeaky(wire.InventorySnapshot, a, response, .{});
             } else try self.disk.query(a);
             var result = try editor.edit(a, self.io, snapshot, request);
             if (request.review) result.validated = try @import("../planning/planner.zig").validate(a, snapshot, result.draft, &self.disk);
@@ -41,7 +43,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
                 .authorization_unavailable => "Administrator authorization is unavailable. Check the operating system's authorization service.",
             };
             var formats: std.ArrayList([]const u8) = .empty;
-            for (std.meta.tags(w.FilesystemKind)) |fs| {
+            for (std.meta.tags(wire.FilesystemKind)) |fs| {
                 if (try self.disk.canFs(a, fs, .format, false, false)) try formats.append(a, @tagName(fs));
             }
             return std.json.Stringify.valueAlloc(a, .{ .version = proto.API_VERSION, .protocol = proto.API_VERSION, .writes_enabled = readiness == .ready, .maintenance_available = self.maintenance != null, .execution_issue = issue, .formats = formats.items, .capabilities = .{ "inventory", "plan", "validate", "execute", "status", "cancel" } }, .{ .emit_null_optional_fields = false });
@@ -121,7 +123,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
         }
         pub fn replyError(self: *Self, a: std.mem.Allocator, err: anyerror) []const u8 {
             const message = if (err == error.HostPreflightFailed) self.disk.failureMessage(err) else @errorName(err);
-            return std.json.Stringify.valueAlloc(a, .{ .@"error" = @errorName(err), .message = message }, .{ .emit_null_optional_fields = false }) catch "{}";
+            return std.json.Stringify.valueAlloc(a, .{ .@"error" = @errorName(err), .message = message }, .{ .emit_null_optional_fields = false }) catch "{\"error\":\"OutOfMemory\",\"message\":\"Cannot encode error response\"}";
         }
         pub fn respond(self: *Self, a: std.mem.Allocator, bytes: []const u8, access: Access) []const u8 {
             return self.dispatch(a, bytes, access) catch |err| self.replyError(a, err);
@@ -131,7 +133,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             return self.respond(a, bytes, .privileged);
         }
         pub fn serve(self: *Self) !u8 {
-            return self.sessions.serve(self, privilegedRequest);
+            return self.sessions.serve(self.io, self, privilegedRequest);
         }
     };
 }

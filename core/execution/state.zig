@@ -1,19 +1,19 @@
 //! Postconditions prevent a successful library return from hiding a different layout.
 const std = @import("std");
-const w = @import("proto").wire;
+const wire = @import("proto").wire;
 fn optionalEqual(a: ?[]const u8, b: ?[]const u8) bool {
     if (a) |value| return b != null and std.mem.eql(u8, value, b.?);
     return b == null;
 }
-pub fn disk(snapshot: w.InventorySnapshot, identity: []const u8) !w.HostDisk {
+pub fn disk(snapshot: wire.InventorySnapshot, identity: []const u8) !wire.HostDisk {
     for (snapshot.disks) |d| if (d.identity) |id| if (std.mem.eql(u8, id, identity)) return d;
     return error.DeviceIdentityChanged;
 }
-fn find(parts: []const w.HostPartition, id: []const u8) ?w.HostPartition {
+fn find(parts: []const wire.HostPartition, id: []const u8) ?wire.HostPartition {
     for (parts) |p| if (std.mem.eql(u8, p.id, id)) return p;
     return null;
 }
-pub fn unchanged(before: w.HostDisk, after: w.HostDisk) !void {
+pub fn unchanged(before: wire.HostDisk, after: wire.HostDisk) !void {
     if (!std.mem.eql(u8, before.identity orelse "", after.identity orelse "") or
         !std.mem.eql(u8, before.capacity, after.capacity) or before.sector_size != after.sector_size or
         before.read_only != after.read_only or before.partitions.len != after.partitions.len or
@@ -33,7 +33,7 @@ pub fn unchanged(before: w.HostDisk, after: w.HostDisk) !void {
         for (p.mountpoints, q.mountpoints) |pm, qm| if (!std.mem.eql(u8, pm, qm)) return error.OccupancyChanged;
     }
 }
-pub fn verify(before: w.HostDisk, after: w.HostDisk, op: w.PlanIntent, desired: ?w.DesiredPartition) !void {
+pub fn verify(before: wire.HostDisk, after: wire.HostDisk, op: wire.PlanIntent, desired: ?wire.DesiredPartition) !void {
     if (!std.mem.eql(u8, before.identity orelse "", after.identity orelse "") or
         !std.mem.eql(u8, before.capacity, after.capacity) or before.sector_size != after.sector_size or after.read_only or
         !optionalEqual(before.partition_table, after.partition_table) or
@@ -75,11 +75,11 @@ pub fn verify(before: w.HostDisk, after: w.HostDisk, op: w.PlanIntent, desired: 
 }
 
 test "library success is insufficient when the resulting geometry differs" {
-    const p: w.HostPartition = .{ .id = "p", .offset = "1048576", .length = "4194304", .name = "", .encryption = .none, .filesystem = .ext4 };
-    const before: w.HostDisk = .{ .path = "/dev/fixture", .identity = "disk", .capacity = "16777216", .sector_size = 512, .model = "fixture", .read_only = false, .partitions = &.{p} };
+    const p: wire.HostPartition = .{ .id = "p", .offset = "1048576", .length = "4194304", .name = "", .encryption = .none, .filesystem = .ext4 };
+    const before: wire.HostDisk = .{ .path = "/dev/fixture", .identity = "disk", .capacity = "16777216", .sector_size = 512, .model = "fixture", .read_only = false, .partitions = &.{p} };
     var after = before;
-    const target: w.DesiredPartition = .{ .id = "p", .offset = p.offset, .length = "2097152", .name = p.name, .filesystem = p.filesystem };
-    const op: w.PlanIntent = .{ .kind = .resize, .partition_id = p.id, .length = target.length };
+    const target: wire.DesiredPartition = .{ .id = "p", .offset = p.offset, .length = "2097152", .name = p.name, .filesystem = p.filesystem };
+    const op: wire.PlanIntent = .{ .kind = .resize, .partition_id = p.id, .length = target.length };
     try std.testing.expectError(error.OperationPostconditionFailed, verify(before, after, op, target));
     var smaller = p;
     smaller.length = target.length;
@@ -89,20 +89,20 @@ test "library success is insufficient when the resulting geometry differs" {
 }
 
 test "unexpected disappearance of an unrelated partition fails verification" {
-    const p: w.HostPartition = .{ .id = "p", .offset = "1048576", .length = "4194304", .name = "", .encryption = .none, .filesystem = .ext4 };
+    const p: wire.HostPartition = .{ .id = "p", .offset = "1048576", .length = "4194304", .name = "", .encryption = .none, .filesystem = .ext4 };
     var other = p;
     other.id = "other";
     other.offset = "6291456";
-    const before: w.HostDisk = .{ .path = "/dev/fixture", .identity = "disk", .capacity = "16777216", .sector_size = 512, .model = "fixture", .read_only = false, .partitions = &.{ p, other } };
+    const before: wire.HostDisk = .{ .path = "/dev/fixture", .identity = "disk", .capacity = "16777216", .sector_size = 512, .model = "fixture", .read_only = false, .partitions = &.{ p, other } };
     var after = before;
     after.partitions = &.{p};
     try std.testing.expectError(error.UnexpectedPartitionChange, verify(before, after, .{ .kind = .delete, .partition_id = "p" }, null));
 }
 
 test "format and label verify their own step rather than a later target geometry" {
-    const p: w.HostPartition = .{ .id = "p", .offset = "1048576", .length = "4194304", .name = "Before", .encryption = .none, .filesystem = .ext4 };
-    const before: w.HostDisk = .{ .path = "/dev/fixture", .identity = "disk", .capacity = "16777216", .sector_size = 512, .model = "fixture", .read_only = false, .partitions = &.{p} };
-    const desired: w.DesiredPartition = .{ .id = "p", .offset = p.offset, .length = "8388608", .name = "After", .filesystem = .ntfs };
+    const p: wire.HostPartition = .{ .id = "p", .offset = "1048576", .length = "4194304", .name = "Before", .encryption = .none, .filesystem = .ext4 };
+    const before: wire.HostDisk = .{ .path = "/dev/fixture", .identity = "disk", .capacity = "16777216", .sector_size = 512, .model = "fixture", .read_only = false, .partitions = &.{p} };
+    const desired: wire.DesiredPartition = .{ .id = "p", .offset = p.offset, .length = "8388608", .name = "After", .filesystem = .ntfs };
     var renamed = p;
     renamed.name = desired.name;
     var after = before;

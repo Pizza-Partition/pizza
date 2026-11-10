@@ -1,6 +1,6 @@
 //! Build the host against its pinned maintenance release and record the VM artifacts.
 const std = @import("std");
-const u = @import("vm_common");
+const vm_common = @import("vm_common");
 const digest = @import("fetch_image.zig").digest;
 const defaults = @import("artifact_options");
 const cli = @import("cli.zig");
@@ -13,7 +13,7 @@ const Builder = struct {
 
     fn command(b: Builder, cwd: []const u8, argv: []const []const u8) ![]const u8 {
         std.debug.print("build: {s}\n", .{argv[0]});
-        return u.check(try u.runAt(b.a, b.io, b.env, .{ .path = cwd }, argv, null, b.timeout));
+        return vm_common.check(try vm_common.runAt(b.a, b.io, b.env, .{ .path = cwd }, argv, null, b.timeout));
     }
     fn revision(b: Builder, root: []const u8) !struct { root: []const u8, commit: []const u8, status: []const u8 } {
         return .{

@@ -1,6 +1,7 @@
 const std = @import("std");
 const proto = @import("proto");
 const wire = proto.wire;
+
 /// Standard GPT types in their canonical and on-disk representations.
 /// Adapters compare these values; they do not maintain independent copies.
 pub const Gpt = struct {
@@ -10,6 +11,7 @@ pub const Gpt = struct {
     pub const ESP = std.fmt.bytesToHex(parseGuid(ESP_GUID) catch unreachable, .lower);
     pub const BASIC_DATA = std.fmt.bytesToHex(parseGuid(BASIC_DATA_GUID) catch unreachable, .lower);
     pub const LINUX_DATA = std.fmt.bytesToHex(parseGuid(LINUX_DATA_GUID) catch unreachable, .lower);
+
     pub fn filesystemType(fs: wire.FilesystemKind) []const u8 {
         return switch (fs) {
             .ntfs, .exfat, .vfat, .udf => &BASIC_DATA,
@@ -17,11 +19,15 @@ pub const Gpt = struct {
         };
     }
 };
+
 /// Linux sysfs exposes SCSI VPD page 0x83 NAA/EUI identifiers in this form.
 /// Windows obtains the same bytes via StorageDeviceIdProperty. No device path,
 /// provider-generated serial or mutable GPT field participates in this identity.
 pub fn diskFromWwid(wwid: []const u8) ![32]u8 {
-    const prefix: usize = if (std.mem.startsWith(u8, wwid, "naa.") or std.mem.startsWith(u8, wwid, "eui.")) 4 else return error.NonPortableDeviceIdentity;
+    const prefix: usize = if (std.mem.startsWith(u8, wwid, "naa.") or std.mem.startsWith(u8, wwid, "eui."))
+        4
+    else
+        return error.NonPortableDeviceIdentity;
     const bytes = wwid[prefix..];
     if (bytes.len != 16 and bytes.len != 24 and bytes.len != 32) return error.NonPortableDeviceIdentity;
     var canonical: [36]u8 = undefined;
@@ -42,6 +48,7 @@ pub fn diskFromWwid(wwid: []const u8) ![32]u8 {
     hash.update("disk");
     return hash.finalResult();
 }
+
 /// New UUIDs use the GPT on-disk byte order, matching the shared storage identity.
 pub fn guid(text: []const u8) ![16]u8 {
     if (text.len != 32) return error.InvalidGuid;
@@ -55,6 +62,7 @@ pub fn guid(text: []const u8) ![16]u8 {
     if (any == 0) return error.InvalidGuid;
     return bytes;
 }
+
 pub fn partition(a: std.mem.Allocator, disk: []const u8, uuid: []const u8) ![]const u8 {
     const d = try proto.hexDigest(disk);
     const u = try guid(uuid);
@@ -92,6 +100,7 @@ pub fn canonicalGuid(a: std.mem.Allocator, bytes_text: []const u8) ![]const u8 {
     const hex = std.fmt.bytesToHex(swap(try guid(bytes_text)), .lower);
     return a.print("{{{s}-{s}-{s}-{s}-{s}}}", .{ hex[0..8], hex[8..12], hex[12..16], hex[16..20], hex[20..32] });
 }
+
 pub fn parseGuid(text: []const u8) ![16]u8 {
     const value = if (text.len == 38 and text[0] == '{' and text[37] == '}') text[1..37] else text;
     if (value.len != 36) return error.InvalidGuid;
@@ -107,6 +116,7 @@ pub fn parseGuid(text: []const u8) ![16]u8 {
     }
     return swap(try guid(&hex));
 }
+
 test "provider GUIDs round-trip through GPT byte order and reject query injection" {
     const a = std.testing.allocator;
     const uuid = "00112233-4455-6677-8899-aabbccddeeff";

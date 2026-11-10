@@ -14,7 +14,7 @@ test {
         _ = @import("../core/platform/linux/maintenance.zig");
         _ = @import("../core/platform/linux/maintenance_store.zig");
         _ = @import("../core/platform/linux/esp.zig");
-        _ = @import("../core/platform/linux/efivars.zig");
+        _ = @import("../core/platform/linux/uefi.zig");
     } else {
         _ = @import("windows.zig");
     }
@@ -26,6 +26,10 @@ test "Linux inventory uses the single current wire contract" {
     const s = try @import("../core/platform/linux/inventory.zig").query(arena.allocator(), std.testing.io);
     try std.testing.expectEqual(@import("proto").API_VERSION, s.version);
     try std.testing.expectEqual(@as(usize, 64), s.snapshot_id.len);
+    for (s.disks) |disk| {
+        try std.testing.expect(disk.identity != null);
+        try std.testing.expectEqual(@as(usize, 64), disk.identity.?.len);
+    }
 }
 
 test "fetched protocol package matches its export manifest" {

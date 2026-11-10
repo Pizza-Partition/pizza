@@ -1,10 +1,10 @@
 //! Rootless QEMU acceptance. Only newly created file-backed guest disks are writable.
 const std = @import("std");
-const u = @import("common");
-const A = std.mem.Allocator;
+const vm_common = @import("common");
+const Allocator = std.mem.Allocator;
 const artifacts = [_][]const u8{ "pizza-backend", "linux-vm-guest", "maint.efi", "linux-tests/domain-tests", "linux-tests/protocol-tests", "linux-tests/host-tests", "linux-tests/image-tests" };
 const Artifact = struct { name: []const u8, sha256: []const u8 };
-fn digest(a: A, io: std.Io, path: []const u8) ![]const u8 {
+fn digest(a: Allocator, io: std.Io, path: []const u8) ![]const u8 {
     const f = try std.Io.Dir.cwd().openFile(io, path, .{});
     defer f.close(io);
     var h = std.crypto.hash.sha2.Sha256.init(.{});
@@ -19,7 +19,7 @@ fn digest(a: A, io: std.Io, path: []const u8) ![]const u8 {
     return a.dupe(u8, &std.fmt.bytesToHex(h.finalResult(), .lower));
 }
 const Host = struct {
-    a: A,
+    a: Allocator,
     io: std.Io,
     out: []const u8,
     stage: []const u8,
@@ -27,7 +27,7 @@ const Host = struct {
     timeout: i64 = 600,
     accel: []const u8 = "tcg",
     sector: u32 = 512,
-    cases: []const u8 = u.cases.csv,
+    cases: []const u8 = vm_common.cases.csv,
     native: bool = true,
     token: []const u8,
     serial: []const u8,
@@ -56,7 +56,7 @@ const Host = struct {
         return std.fs.path.join(h.a, &.{ h.out, name });
     }
     fn command(h: Host, argv: []const []const u8, input: ?[]const u8) ![]const u8 {
-        return u.check(try u.runAt(h.a, h.io, null, .inherit, argv, input, h.timeout));
+        return vm_common.check(try vm_common.runAt(h.a, h.io, null, .inherit, argv, input, h.timeout));
     }
     fn copy(h: Host, from: []const u8, to: []const u8) !void {
         try std.Io.Dir.cwd().copyFile(from, .cwd(), to, h.io, .{ .make_path = true });
@@ -93,7 +93,7 @@ const Host = struct {
         try target.setPermissions(h.io, st.permissions);
         target.close(h.io);
         if (std.mem.endsWith(u8, source, "/domain-tests") or std.mem.endsWith(u8, source, "/protocol-tests")) return;
-        const result = try u.runAt(h.a, h.io, null, .inherit, &.{ "ldd", source }, null, 30);
+        const result = try vm_common.runAt(h.a, h.io, null, .inherit, &.{ "ldd", source }, null, 30);
         if (!result.term.success()) {
             if (std.mem.indexOf(u8, result.stderr, "not a dynamic executable") != null or std.mem.indexOf(u8, result.stdout, "statically linked") != null) return;
             std.debug.print("ldd {s}: {s}{s}\n", .{ source, result.stdout, result.stderr });
@@ -260,7 +260,7 @@ const Host = struct {
         }
     }
     fn scenario(h: *Host, case: []const u8) !void {
-        const start = try u.cases.run(h, case);
+        const start = try vm_common.cases.run(h, case);
         try h.wait("PZ_LINUX_READY", start);
         try h.guest("verify", case);
         try h.collect();
@@ -304,7 +304,7 @@ const Host = struct {
         const term = try h.child.?.wait(h.io);
         h.child = null;
         if (!term.success()) return error.ShutdownFailed;
-        if (!std.mem.eql(u8, h.boot_id, try u.hostBootId(h.a, h.io))) return error.HostRebooted;
+        if (!std.mem.eql(u8, h.boot_id, try vm_common.hostBootId(h.a, h.io))) return error.HostRebooted;
         try h.save("results.json", .{ .status = "passed", .native = h.native, .sector_size = h.sector, .results = h.results.items, .host_boot_id = h.boot_id });
     }
 };
@@ -338,7 +338,7 @@ pub fn main(init: std.process.Init) !void {
     var random: [6]u8 = undefined;
     io.random(&random);
     const token = try a.dupe(u8, &std.fmt.bytesToHex(random, .lower));
-    var h: Host = .{ .a = a, .io = io, .out = out, .stage = stage, .base = base, .token = token, .serial = try a.print("PZ-E2E-{s}", .{token}), .wwn = try a.print("5001{s}", .{token}), .boot_id = try u.hostBootId(a, io) };
+    var h: Host = .{ .a = a, .io = io, .out = out, .stage = stage, .base = base, .token = token, .serial = try a.print("PZ-E2E-{s}", .{token}), .wwn = try a.print("5001{s}", .{token}), .boot_id = try vm_common.hostBootId(a, io) };
     if (options.get("--sector")) |s| h.sector = try std.fmt.parseInt(u32, s, 10);
     if (h.sector != 512 and h.sector != 4096) return error.InvalidSector;
     if (options.get("--timeout")) |s| h.timeout = try std.fmt.parseInt(i64, s, 10);
@@ -346,7 +346,7 @@ pub fn main(init: std.process.Init) !void {
     if (options.get("--accel")) |s| h.accel = s;
     if (!std.mem.eql(u8, h.accel, "kvm") and !std.mem.eql(u8, h.accel, "tcg")) return error.InvalidAccelerator;
     if (options.get("--cases")) |s| h.cases = s;
-    try u.cases.validate(h.cases);
+    try vm_common.cases.validate(h.cases);
     if (options.get("--native")) |s| {
         if (std.mem.eql(u8, s, "skip")) h.native = false else if (!std.mem.eql(u8, s, "run")) return error.InvalidNative;
     }
