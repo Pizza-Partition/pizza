@@ -65,3 +65,33 @@ pub const Capabilities = struct {
         return self.available;
     }
 };
+
+test "format and rename is one executable operation carrying the new filesystem label" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var f = fixture();
+    const parts = try a.dupe(wire.HostPartition, f.disk.partitions);
+    parts[0].capabilities = &.{.{ .operation = .format, .backend = .host, .support = .available, .reason = "fixture" }};
+    f.disk.partitions = parts;
+    f.inventory.disks = &.{f.disk};
+    for ([_]wire.FilesystemKind{ .ext4, .ntfs }) |fs| {
+        var desired = @import("../../core/planning/editor.zig").retained(parts[0]);
+        desired.name = "New label";
+        desired.filesystem = fs;
+        desired.retain_data = false;
+        const draft = try @import("../../core/planning/editor.zig").generate(a, f.inventory, f.disk, &.{desired});
+        try std.testing.expectEqual(@as(usize, 1), draft.intents.len);
+        try std.testing.expectEqualStrings(desired.name, draft.intents[0].label.?);
+        const result = try @import("../../core/planning/planner.zig").validate(a, f.inventory, draft, Capabilities{});
+        try std.testing.expect(result.executable);
+        try std.testing.expectEqual(@as(usize, 1), result.host_operations.len);
+        try std.testing.expectEqual(.format, result.host_operations[0].kind);
+        var missing_draft = draft;
+        const intents = try a.dupe(wire.PlanIntent, draft.intents);
+        intents[0].label = null;
+        missing_draft.intents = intents;
+        const missing = try @import("../../core/planning/planner.zig").validate(a, f.inventory, missing_draft, Capabilities{});
+        try std.testing.expect(!missing.executable);
+    }
+}

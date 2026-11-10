@@ -65,7 +65,7 @@ pub fn generate(a: Allocator, snapshot: wire.InventorySnapshot, disk: wire.HostD
         };
         if (!std.mem.eql(u8, p.offset, old.offset) or !std.mem.eql(u8, p.length, old.length)) try intents.append(a, .{ .kind = if (std.mem.eql(u8, p.length, old.length)) .move else .resize, .partition_id = p.id, .offset = p.offset, .length = p.length });
         if (p.retain_data and p.filesystem == old.filesystem and !std.mem.eql(u8, p.name, old.name)) try intents.append(a, .{ .kind = .label, .partition_id = p.id, .label = p.name });
-        if (!p.retain_data or p.filesystem != old.filesystem) try intents.append(a, .{ .kind = .format, .partition_id = p.id, .filesystem = p.filesystem });
+        if (!p.retain_data or p.filesystem != old.filesystem) try intents.append(a, .{ .kind = .format, .partition_id = p.id, .filesystem = p.filesystem, .label = p.name });
     }
     for (layout) |p| if (oldPartition(disk, p.id) == null) try intents.append(a, .{ .kind = .create, .partition_id = p.id, .offset = p.offset, .length = p.length, .filesystem = p.filesystem, .label = p.name });
     return .{ .version = snapshot.version, .snapshot_id = snapshot.snapshot_id, .disk_identity = disk.identity orelse return error.DiskIdentityNotFound, .intents = intents.items, .layout = layout };

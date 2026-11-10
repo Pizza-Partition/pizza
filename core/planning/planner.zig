@@ -18,6 +18,15 @@ fn has(intents: []const wire.PlanIntent, id: []const u8, kind: wire.IntentKind) 
     for (intents) |i| if (std.mem.eql(u8, i.partition_id, id) and i.kind == kind) return true;
     return false;
 }
+fn formatLabel(intents: []const wire.PlanIntent, partition: wire.DesiredPartition) bool {
+    if (partition.retain_data) return false;
+    for (intents) |intent| {
+        if (intent.kind == .format and std.mem.eql(u8, intent.partition_id, partition.id)) {
+            if (intent.label) |label| if (std.mem.eql(u8, label, partition.name)) return true;
+        }
+    }
+    return false;
+}
 fn diagnostic(a: std.mem.Allocator, list: *std.ArrayList(wire.Diagnostic), code: []const u8, message: []const u8, id: ?[]const u8) !void {
     try list.append(a, .{ .code = code, .message = message, .partition_id = id, .severity = .@"error" });
 }
@@ -106,7 +115,7 @@ pub fn validate(a: std.mem.Allocator, inventory: wire.InventorySnapshot, draft: 
             const changed = geometry_changed or old.filesystem != p.filesystem or !p.retain_data or !std.mem.eql(u8, old.name, p.name);
             if (changed and (old.protected or old.encryption != .none)) try diagnostic(a, &diags, "protected_partition", "Boot anchors and encrypted or unidentified volumes cannot be changed.", p.id);
             if (geometry_changed and !has(draft.intents, p.id, .resize) and !has(draft.intents, p.id, .move)) try diagnostic(a, &diags, "missing_geometry_intent", "Geometry changes need an explicit resize or move intent.", p.id);
-            if (!std.mem.eql(u8, old.name, p.name) and !has(draft.intents, p.id, .label)) try diagnostic(a, &diags, "missing_label_intent", "Label changes require an explicit intent.", p.id);
+            if (!std.mem.eql(u8, old.name, p.name) and !has(draft.intents, p.id, .label) and !formatLabel(draft.intents, p)) try diagnostic(a, &diags, "missing_label_intent", "Label changes require a label intent or an explicit format label.", p.id);
             if (old.filesystem != p.filesystem or !p.retain_data) {
                 if (p.retain_data or !has(draft.intents, p.id, .format)) try diagnostic(a, &diags, "format_confirmation_required", "Filesystem replacement must explicitly discard existing contents.", p.id);
                 try destroyed.append(a, p.id);
