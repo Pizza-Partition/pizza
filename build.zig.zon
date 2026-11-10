@@ -4,11 +4,6 @@
     .fingerprint = 0xcfdd826fa2266c7f,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
-        .libvirt_api = .{
-            .url = "https://download.libvirt.org/libvirt-12.8.0.tar.xz",
-            .hash = "N-V-__8AADR3NAmbbJgNWjiLHYULLjFUKa7utVkC39T5pWSH",
-            .lazy = true,
-        },
         .zig_webui = .{
             .url = "https://github.com/webui-dev/zig-webui/archive/e89087c3e9846d73c4d71865140d8a8ab64082b5.tar.gz",
             .hash = "zig_webui-2.5.1-M4z7zWPVAQA4GRBq-uS_aPAoxjFsR0hbpszpshwGX1Tf",

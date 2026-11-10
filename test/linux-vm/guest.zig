@@ -115,6 +115,9 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, action, "setup")) try Platform.setup(g) else if (std.mem.eql(u8, action, "native")) {
         try g.runNative();
     } else if (std.mem.eql(u8, action, "plan")) try g.plan() else if (std.mem.eql(u8, action, "prepare")) {
+        // Formatting the fixture emits asynchronous device events. Let udev
+        // finish probing before the product takes its exclusive ESP disk lock.
+        _ = try g.program("udev-settle", &.{ "/usr/bin/udevadm", "settle", "--timeout=30" }, null);
         defer {
             _ = g.program("kernel", &.{"/usr/bin/dmesg"}, null) catch {};
         }

@@ -34,7 +34,8 @@ Linux 宿主需要项目固定的 Zig、QEMU/KVM、qemu-img、mkfs.vfat、mcopy�
 session daemon。构建自动获取锁定的维护镜像，不依赖维护源码检出目录或本地 UKI 工具；
 下载使用 curl 的 HTTPS 传输。这些是系统工具依赖，编排和断言均在 Zig 中。
 
-libvirt C API 源码通过根目录 `build.zig.zon` 固定到 12.8.0，由 Zig 翻译头文件。
+libvirt C API 头文件与库都从 `-Dvm-libvirt` 指定的同一安装前缀读取，由 Zig 翻译头文件。
+CI 的固定软件仓库快照提供配套的 libvirt 12.8.0 头文件、库和守护进程。
 运行需要同版本的库和 daemon；`zig fetch` 不安装运行环境。
 `-Dvm-libvirt=/absolute/libvirt/prefix` 指定包含 `lib/`、`sbin/libvirtd` 的安装前缀。
 测试启动私有的无特权 libvirt session，不连接用户已有的 VM session。

@@ -40,8 +40,6 @@ pub fn add(b: *std.Build) !void {
         step.dependOn(&b.addFail("Pass -Dvm-libvirt=/absolute/libvirt/prefix; see test/windows-vm/README.md").step);
         return;
     };
-    const api = b.lazyDependency("libvirt_api", .{}) orelse return;
-    const header = b.addConfigHeader(.{ .style = .{ .autoconf_at = api.path("libvirt-12.8.0/include/libvirt/libvirt-common.h.in") }, .include_path = "libvirt/libvirt-common.h" }, .{ .LIBVIRT_VERSION_NUMBER = 12008000 });
     const c_header = b.addWriteFiles().add("vm.h",
         \\#define _DEFAULT_SOURCE
         \\#include <libvirt/libvirt.h>
@@ -51,8 +49,9 @@ pub fn add(b: *std.Build) !void {
         \\#include <stdlib.h>
     );
     const translated = b.addTranslateC(.{ .root_source_file = c_header, .target = b.graph.host, .optimize = .ReleaseSafe });
-    translated.addConfigHeader(header);
-    translated.addIncludePath(api.path("libvirt-12.8.0/include"));
+    // Use the headers shipped with the runtime selected by --vm-libvirt.
+    // A separately extracted source archive can disagree with that installation.
+    translated.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ prefix, "include" }) });
     const runtime = b.createModule(.{ .root_source_file = b.path("test/windows-vm/vm.zig"), .target = b.graph.host, .optimize = .ReleaseSafe, .link_libc = true });
     runtime.addImport("clap", clap);
     runtime.addImport("vm_common", common);
