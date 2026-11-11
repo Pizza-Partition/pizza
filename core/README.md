@@ -30,7 +30,7 @@
 - `app/service.zig` 通过 `service(Disk, Sessions)` 组合业务。
   `coordinator.zig` 负责审批后入队、执行前复核和断线状态恢复。
 - `desktop/window.zig` 管理窗口、GTK 初始化与平台兼容处理，将请求交给注入的应用服务；
-  `http.zig` 统一处理资源查找、响应头与 MIME 类型。CLI 与窗口使用各自的参数类型。
+  `asset_response.zig` 统一处理资源查找、响应头与 MIME 类型。CLI 与窗口使用各自的参数类型。
 - Linux 的 `session.zig` 管理认证、连接及服务生命周期，`client` 处理授权与请求，
   `store` 处理所有权检查和原子持久记录；存储层不查询工作线程，状态合并由应用层负责。
 - Windows 的 `wmi` 只管理 COM 和类型转换，`native` 管理句柄和原生布局，`policy` 是纯能力策略，

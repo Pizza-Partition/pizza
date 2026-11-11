@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const contract=new URL('../../../zig-out/share/pizza/protocol/contract.js',import.meta.url).href;
-const source=(await readFile(new URL('../prototype/transport.js',import.meta.url),'utf8')).replace('./protocol/contract.js',contract);
+const source=(await readFile(new URL('../app/transport.js',import.meta.url),'utf8')).replace('./protocol/contract.js',contract);
 const {request,PROTOCOL_VERSION}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 test('native session advertises actual readiness and validation keeps administrator scope',async()=>{
   const calls=[];

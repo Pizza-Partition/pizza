@@ -7,7 +7,7 @@ test {
     _ = @import("../core/execution/state.zig");
     _ = @import("../core/execution/runner.zig");
     _ = @import("../core/boot/uefi.zig");
-    _ = @import("../core/boot/session.zig");
+    _ = @import("../core/boot/ports.zig");
     _ = @import("domain/planner.zig");
     _ = @import("domain/worker.zig");
     _ = @import("domain/application.zig");

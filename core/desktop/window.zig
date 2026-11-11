@@ -60,7 +60,7 @@ pub fn run(a: std.mem.Allocator, io: std.Io, options: Options, service: anytype)
     webui.setConfig(.use_cookies, true);
     const win = webui.newWindow();
     win.setPublic(false);
-    win.setFileHandler(@import("http.zig").response);
+    win.setFileHandler(@import("asset_response.zig").response);
     _ = try win.bind("pizza_request", Binding.request);
     _ = try win.bind("pizza_session", Binding.session);
     _ = try win.bind("pizza_plan", Binding.plan);

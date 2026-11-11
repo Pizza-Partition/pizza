@@ -1,7 +1,7 @@
 //! OS-independent ESP staging format and bounds shared with both native ports.
 const std = @import("std");
 const proto = @import("proto");
-const boot = @import("session.zig");
+const boot = @import("ports.zig");
 pub fn bootPath(a: std.mem.Allocator, session: []const u8) ![]const u8 {
     _ = try proto.hexDigest(session);
     var result: std.ArrayList(u8) = .empty;

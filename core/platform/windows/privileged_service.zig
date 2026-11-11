@@ -2,13 +2,13 @@
 const Session = @This();
 const std = @import("std");
 const native = @import("native.zig");
-const security = @import("session/security.zig");
-const transport = @import("session/transport.zig");
-const client = @import("session/client.zig");
+const security = @import("ipc/security.zig");
+const transport = @import("ipc/transport.zig");
+const client = @import("ipc/client.zig");
 pub const Handler = *const fn (?*anyopaque, std.mem.Allocator, []const u8) []const u8;
 parent_pid: ?u32 = null,
 worker: @import("../../execution/worker.zig") = .{},
-store: @import("session/store.zig") = .{},
+store: @import("ipc/store.zig") = .{},
 pub fn isPrivileged(_: *const Session) bool {
     return security.elevated();
 }

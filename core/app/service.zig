@@ -14,7 +14,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
         io: std.Io,
         disk: Disk,
         sessions: Sessions = .{},
-        maintenance: ?@import("../boot/session.zig").Controller = null,
+        maintenance: ?@import("../boot/ports.zig").Controller = null,
 
         /// UI and CLI share this read-only editor endpoint. Elevated discovery
         /// uses the existing privileged inventory channel, never client data.

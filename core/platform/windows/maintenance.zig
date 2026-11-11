@@ -2,9 +2,9 @@
 const std = @import("std");
 const proto = @import("proto");
 const native = @import("native.zig");
-const security = @import("session/security.zig");
+const security = @import("ipc/security.zig");
 pub const Maintenance = @import("../../boot/maintenance.zig").Maintenance(@This());
-pub const Store = @import("session/store.zig");
+pub const Store = @import("ipc/store.zig");
 pub const Esp = @import("esp.zig").Esp;
 pub const Uefi = @import("uefi.zig").Uefi;
 pub const power = @import("power.zig");

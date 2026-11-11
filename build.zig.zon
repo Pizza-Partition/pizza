@@ -1,6 +1,6 @@
 .{
     .name = .pizza,
-    .version = "0.5.7",
+    .version = "0.5.8",
     .fingerprint = 0xcfdd826fa2266c7f,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
@@ -17,13 +17,13 @@
             .hash = "clap-0.12.0-oBajB4XpAQCF1WRKnD5KOKPsnwwT_NNdAJ7Ww3irYJac",
         },
         .pizza_maintenance = .{
-            .url = "https://github.com/Pizza-Partition/pizza-maint/releases/download/v0.5.3/pizza-maint-x86_64.tar.gz",
-            .hash = "N-V-__8AAE4iehwQI9o0bMmkzBK3hfvxjNI7CAVWJMWMhHwL",
+            .url = "https://github.com/Pizza-Partition/pizza-maint/releases/download/v0.5.5/pizza-maint-x86_64.tar.gz",
+            .hash = "N-V-__8AANbfehyEmyiZ1OvQDjsP275b2LwO4RRyDNj0uUE2",
         },
         .win32 = .{
             .url = "https://codeload.github.com/marlersoft/zigwin32/tar.gz/6f281fc4a9a6135000ba0f9c6792d0c2b8e7acff",
             .hash = "win32-42.0.39-preview-mX5pFbz94wMrS0KOy_U9-B8H6DJqIvICfPIE6bRajtvv",
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "core", "build", "test", "ui/partition/prototype", "packaging", "README.md", ".zigversion" },
+    .paths = .{ "build.zig", "build.zig.zon", "core", "build", "test", "ui/partition/app", "packaging", "README.md", ".zigversion" },
 }

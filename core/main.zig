@@ -10,8 +10,8 @@ const Disk = switch (builtin.os.tag) {
     else => @compileError("Pizza only supports Linux and Windows"),
 };
 const Sessions = switch (builtin.os.tag) {
-    .linux => @import("platform/linux/session.zig"),
-    .windows => @import("platform/windows/session.zig"),
+    .linux => @import("platform/linux/privileged_service.zig"),
+    .windows => @import("platform/windows/privileged_service.zig"),
     else => unreachable,
 };
 const Maintenance = switch (builtin.os.tag) {

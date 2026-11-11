@@ -2,10 +2,10 @@
 const Session = @This();
 const std = @import("std");
 const libc = @import("libc");
-const client = @import("session/client.zig");
+const client = @import("ipc/client.zig");
 const Worker = @import("../../execution/worker.zig");
-const Store = @import("session/store.zig");
-const transport = @import("session/transport.zig");
+const Store = @import("ipc/store.zig");
+const transport = @import("ipc/transport.zig");
 const validId = Worker.validId;
 pub const Handler = *const fn (?*anyopaque, std.mem.Allocator, []const u8) []const u8;
 worker: Worker = .{},

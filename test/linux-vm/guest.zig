@@ -82,7 +82,7 @@ fn serialWrite(io: std.Io, bytes: []const u8) !void {
     var at: usize = 0;
     while (at < bytes.len) {
         const end = @min(at + 256, bytes.len);
-        if (!@import("core/platform/linux/session/transport.zig").writeAll(1, bytes[at..end])) return error.SerialWriteFailed;
+        if (!@import("core/platform/linux/ipc/transport.zig").writeAll(1, bytes[at..end])) return error.SerialWriteFailed;
         if (tcdrain(1) != 0) return error.SerialDrainFailed;
         at = end;
         try std.Io.sleep(io, .fromMilliseconds(1), .awake);

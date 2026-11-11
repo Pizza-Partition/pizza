@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ExecutionMonitor} from '../prototype/execution-client.js';
+import {ExecutionMonitor} from '../app/execution-client.js';
 const id='a'.repeat(64);
 const {CONTRACT}=await import(new URL('../../../zig-out/share/pizza/protocol/contract.js',import.meta.url));
 const PROTOCOL_VERSION=CONTRACT['x-pizza'].version;

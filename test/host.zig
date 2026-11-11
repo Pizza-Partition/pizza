@@ -4,12 +4,12 @@ const proto = @import("proto");
 test {
     _ = @import("../core/boot/maintenance.zig");
     _ = @import("domain.zig");
-    _ = @import("../core/desktop/http.zig");
+    _ = @import("../core/desktop/asset_response.zig");
     if (comptime @import("builtin").os.tag == .linux) {
-        _ = @import("../core/platform/linux/session/client.zig");
-        _ = @import("../core/platform/linux/session.zig");
-        _ = @import("../core/platform/linux/session/store.zig");
-        _ = @import("../core/platform/linux/session/transport.zig");
+        _ = @import("../core/platform/linux/ipc/client.zig");
+        _ = @import("../core/platform/linux/privileged_service.zig");
+        _ = @import("../core/platform/linux/ipc/store.zig");
+        _ = @import("../core/platform/linux/ipc/transport.zig");
         _ = @import("../core/platform/linux/blockdev.zig");
         _ = @import("../core/platform/linux/maintenance.zig");
         _ = @import("../core/platform/linux/maintenance_store.zig");

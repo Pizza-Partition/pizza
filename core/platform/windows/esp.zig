@@ -3,7 +3,7 @@
 const std = @import("std");
 const proto = @import("proto");
 const native = @import("native.zig");
-const boot = @import("../../boot/session.zig");
+const boot = @import("../../boot/ports.zig");
 const staging = @import("../../boot/staging.zig");
 const filename = staging.filename;
 const limit = staging.limit;
@@ -26,7 +26,7 @@ pub const Esp = struct {
     /// Discovery and creation are separate from boot arming. Call reserve() for
     /// EVERY file before the offline compiler captures its FAT allocation proof.
     pub fn open(a: std.mem.Allocator, io: std.Io, disk: proto.wire.HostDisk, part: proto.wire.HostPartition, session: []const u8, create: bool) !Esp {
-        if (!@import("session/security.zig").elevated()) return error.AdministratorRequired;
+        if (!@import("ipc/security.zig").elevated()) return error.AdministratorRequired;
         if (!@import("../../execution/worker.zig").validId(session)) return error.InvalidSession;
         if (disk.read_only or !std.mem.eql(u8, disk.partition_table orelse "", "gpt") or
             !std.mem.eql(u8, part.type_guid orelse "", ESP_TYPE)) return error.EspRequired;

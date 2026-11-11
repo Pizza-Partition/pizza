@@ -14,7 +14,7 @@ fn partition(
     disk: wire.HostDisk,
     disk_number: u32,
     raw: native.win32.system.ioctl.PARTITION_INFORMATION_EX,
-    gpt_slot: u32,
+    gpt_entry_index: u32,
 ) !wire.HostPartition {
     const gpt = raw.Anonymous.Gpt;
     const uuid = try native.guid(a, gpt.PartitionId);
@@ -30,7 +30,7 @@ fn partition(
         .partition_uuid = uuid,
         .type_guid = try native.guid(a, gpt.PartitionType),
         .attributes = try a.print("{d}", .{@as(u64, @bitCast(gpt.Attributes))}),
-        .slot = gpt_slot,
+        .slot = gpt_entry_index,
     };
     var parts = try connection.query(a, try a.print("SELECT * FROM MSFT_Partition WHERE DiskNumber = {d} AND PartitionNumber = {d}", .{ disk_number, raw.PartitionNumber }));
     defer parts.deinit();
@@ -147,8 +147,8 @@ pub fn query(a: std.mem.Allocator, _: std.Io) !wire.InventorySnapshot {
             for (layout.entries) |p| {
                 if (p.PartitionStyle != .GPT or p.PartitionLength.QuadPart == 0) continue;
                 if (p.StartingOffset.QuadPart < 0 or p.PartitionLength.QuadPart < 0 or p.PartitionNumber == 0) return error.InvalidWindowsDiskLayout;
-                const gpt_slot = try @import("../../planning/gpt.zig").slot(raw_gpt.bytes, raw_gpt.info, std.mem.asBytes(&p.Anonymous.Gpt.PartitionId), @intCast(p.StartingOffset.QuadPart), @intCast(p.PartitionLength.QuadPart));
-                try parts.append(a, try partition(a, connection, crypt, disk, number, p, gpt_slot));
+                const gpt_entry_index = try @import("../../planning/gpt.zig").entryIndex(raw_gpt.bytes, raw_gpt.info, std.mem.asBytes(&p.Anonymous.Gpt.PartitionId), @intCast(p.StartingOffset.QuadPart), @intCast(p.PartitionLength.QuadPart));
+                try parts.append(a, try partition(a, connection, crypt, disk, number, p, gpt_entry_index));
             }
             disk.partitions = try parts.toOwnedSlice(a);
         } else disk.read_only = true;

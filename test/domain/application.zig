@@ -86,7 +86,7 @@ const Maintenance = struct {
     finished: bool = false,
     armed: bool = false,
     digest: []const u8 = DISK_ID,
-    fn port(self: *Maintenance) @import("../../core/boot/session.zig").Controller {
+    fn port(self: *Maintenance) @import("../../core/boot/ports.zig").Controller {
         return .{ .context = self, .prepare = prepare, .reboot = reboot, .complete = complete, .pending = pending, .cancel = cancel };
     }
     fn prepare(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, _: wire.InventorySnapshot, plan: wire.ValidatedPlan) !wire.MaintenanceSession {

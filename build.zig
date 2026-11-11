@@ -46,13 +46,13 @@ pub fn build(b: *std.Build) !void {
         if (!headless) module.addImport("gobject", bindings.gobject);
     }
     if (win32) |m| module.addImport("win32", m);
-    if (!headless) try webui_build.addEmbeddedDir(b, module, .{ .path = "ui/partition/prototype", .http_responses = false });
+    if (!headless) try webui_build.addEmbeddedDir(b, module, .{ .path = "ui/partition/app", .http_responses = false });
     const exe = b.addExecutable(.{ .name = if (headless) "pizza-backend" else "pizza", .root_module = module });
     configureCompile(exe, windows_lld);
     b.installArtifact(exe);
     if (!headless and target.result.os.tag == .linux) {
         b.installFile("packaging/linux/pizza.desktop", "share/applications/pizza.desktop");
-        b.installFile("ui/partition/prototype/assets/pizza-mark.svg", "share/icons/hicolor/scalable/apps/pizza.svg");
+        b.installFile("ui/partition/app/assets/pizza-mark.svg", "share/icons/hicolor/scalable/apps/pizza.svg");
     }
     const run = b.addRunArtifact(exe);
     run.addPassthruArgs();

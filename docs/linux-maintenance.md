@@ -1,6 +1,6 @@
 # Linux 维护控制器
 
-Linux 与 Windows 均通过 `core/boot/session.zig` 的 Controller 接口接入产品请求。
+Linux 与 Windows 均通过 `core/boot/ports.zig` 的 Controller 接口接入产品请求。
 Linux 原生端口位于 `core/platform/linux/maintenance.zig`，与 Windows 共用
 `core/boot/maintenance.zig` 的 prepare、reboot、complete、pending、cancel 状态机。
 所有构建均启用维护入口；镜像由 `build.zig.zon` 的 `pizza_maintenance` 固定版本及内容哈希，自动获取。

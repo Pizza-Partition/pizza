@@ -3,7 +3,7 @@ test {
     _ = @import("../core/platform/windows/uefi.zig");
     _ = @import("../core/platform/windows/esp.zig");
     _ = @import("../core/platform/windows/policy.zig");
-    _ = @import("../core/platform/windows/session.zig");
+    _ = @import("../core/platform/windows/privileged_service.zig");
 }
 const std = @import("std");
 
@@ -18,8 +18,8 @@ test "Windows VPD descriptor may end with a bounded nonzero NextOffset" {
     try std.testing.expectError(error.InvalidStorageIdentifiers, @import("../core/platform/windows/native.zig").portableWwid(std.testing.allocator, &bytes));
 }
 const native = @import("../core/platform/windows/native.zig");
-const security = @import("../core/platform/windows/session/security.zig");
-const transport = @import("../core/platform/windows/session/transport.zig");
+const security = @import("../core/platform/windows/ipc/security.zig");
+const transport = @import("../core/platform/windows/ipc/transport.zig");
 
 test "portable storage IDs ignore port identifiers and reject malformed descriptor offsets" {
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
@@ -118,7 +118,7 @@ test "durable records are replaced atomically and reject public files" {
     defer temp.cleanup();
     var buffer: [32768]u8 = undefined;
     const length = try temp.dir.realPath(std.testing.io, &buffer);
-    var store: @import("../core/platform/windows/session/store.zig") = .{ .path = buffer[0..length] };
+    var store: @import("../core/platform/windows/ipc/store.zig") = .{ .path = buffer[0..length] };
     const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     try store.persist(id, "{\"prepared\":1}");
     try std.testing.expectEqualStrings("{\"prepared\":1}", (try store.read(a, id)).?);

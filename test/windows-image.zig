@@ -44,7 +44,7 @@ const Privilege = struct {
     token: native_api.foundation.HANDLE,
     previous: native_api.win32.security.TOKEN_PRIVILEGES,
     fn enable() !Privilege {
-        if (!@import("../core/platform/windows/session/security.zig").elevated()) return error.ElevatedWindowsRequired;
+        if (!@import("../core/platform/windows/ipc/security.zig").elevated()) return error.ElevatedWindowsRequired;
         const adv = native_api.win32.advapi32;
         var token: ?native_api.foundation.HANDLE = null;
         if (adv.OpenProcessToken(native_api.kernel32.GetCurrentProcess(), .{ .QUERY = 1, .ADJUST_PRIVILEGES = 1 }, &token) == 0) return error.VolumePrivilegeUnavailable;

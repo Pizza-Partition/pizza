@@ -1,7 +1,7 @@
 # Pizza desktop UI
 
-`partition/prototype` 包含桌面界面，普通 `pizza` 程序嵌入并通过 zig-webui 提供页面。
-`transport.js` 使用 Zig 绑定调用真实查询、验证和宿主执行；协议 JS 来自独立协议包。模块划分和设计原则见 `partition/prototype/README.md`。
+`partition/app` 包含桌面界面，普通 `pizza` 程序嵌入并通过 zig-webui 提供页面。
+`transport.js` 使用 Zig 绑定调用真实查询、验证和宿主执行；协议 JS 来自独立协议包。模块划分和设计原则见 `partition/app/README.md`。
 `?demo=1` 保留内存演示，用于外观设计，不会执行磁盘操作。
 
 后端编辑、plan 生成、分区操作和重启编排测试使用 Zig（`zig build test-domain -Dheadless=true`）。

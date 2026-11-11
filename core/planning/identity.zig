@@ -76,22 +76,7 @@ pub fn partition(a: std.mem.Allocator, disk: []const u8, uuid: []const u8) ![]co
 }
 
 /// Bind planning to geometry and identities, excluding changing usage counters.
-pub fn fingerprint(a: std.mem.Allocator, snapshot: wire.InventorySnapshot) ![]const u8 {
-    const disks = try a.dupe(wire.HostDisk, snapshot.disks);
-    for (disks) |*disk| {
-        disk.diagnostics = &.{};
-        disk.partitions = try a.dupe(wire.HostPartition, disk.partitions);
-        for (@constCast(disk.partitions)) |*part| {
-            part.used_bytes = null;
-            part.free_bytes = null;
-            part.mountpoints = &.{};
-        }
-    }
-    const bytes = try std.json.Stringify.valueAlloc(a, disks, .{});
-    var hash: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(bytes, &hash, .{});
-    return a.dupe(u8, &std.fmt.bytesToHex(hash, .lower));
-}
+pub const fingerprint = @import("proto").inventory_fingerprint.fingerprint;
 
 fn swap(bytes: [16]u8) [16]u8 {
     return .{ bytes[3], bytes[2], bytes[1], bytes[0], bytes[5], bytes[4], bytes[7], bytes[6], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15] };

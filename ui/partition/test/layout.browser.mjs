@@ -39,7 +39,7 @@ const server = http.createServer(async (req, res) => {
   const file =
     path === '/protocol/contract.js'
       ? contract
-      : root + 'ui/partition/prototype' + (path === '/' ? '/index.html' : path);
+      : root + 'ui/partition/app' + (path === '/' ? '/index.html' : path);
   try {
     const body = await fs.readFile(file);
     res

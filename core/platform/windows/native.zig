@@ -119,11 +119,11 @@ pub fn readGpt(a: std.mem.Allocator, handle: foundation.HANDLE, sector: u32, cap
     var header: [4096]u8 align(4096) = undefined;
     try readDisk(handle, sector, header[0..sector]);
     const info = try @import("../../planning/gpt.zig").table(header[0..sector], sector, capacity);
-    const bytes = try a.alignedAlloc(u8, .fromByteUnits(4096), std.mem.alignForward(usize, info.bytes, sector));
+    const bytes = try a.alignedAlloc(u8, .fromByteUnits(4096), std.mem.alignForward(usize, info.entries_bytes, sector));
     errdefer a.free(bytes);
-    if (bytes.len > capacity - info.offset) return error.InvalidGpt;
-    try readDisk(handle, info.offset, bytes);
-    if (std.hash.Crc32.hash(bytes[0..info.bytes]) != info.checksum) return error.InvalidGpt;
+    if (bytes.len > capacity - info.offset_bytes) return error.InvalidGpt;
+    try readDisk(handle, info.offset_bytes, bytes);
+    if (std.hash.Crc32.hash(bytes[0..info.entries_bytes]) != info.checksum) return error.InvalidGpt;
     return .{ .info = info, .bytes = bytes };
 }
 pub fn deviceNumber(handle: foundation.HANDLE) !u32 {

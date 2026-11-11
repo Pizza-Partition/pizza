@@ -216,7 +216,7 @@ pub fn main(init: std.process.Init) !void {
     if (parsed.args.help != 0) return cli.help(init.io, cli.Guest);
     const positional = parsed.positionals;
     var g: Guest = .{ .a = a, .io = init.io, .work = positional[1].?, .serial = positional[2].?, .wwn = positional[3].?, .case = positional[4].? };
-    if (!@import("core/platform/windows/session/security.zig").elevated()) return error.ElevatedWindowsRequired;
+    if (!@import("core/platform/windows/ipc/security.zig").elevated()) return error.ElevatedWindowsRequired;
     const action = positional[0].?;
     if (action == .install) {
         try std.Io.Dir.cwd().createDir(g.io, g.work, .default_dir);

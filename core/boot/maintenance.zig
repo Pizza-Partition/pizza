@@ -4,7 +4,7 @@ const std = @import("std");
 const proto = @import("proto");
 const Handoff = proto.Handoff;
 const wire = proto.wire;
-const boot = @import("session.zig");
+const boot = @import("ports.zig");
 const uefi = @import("uefi.zig");
 
 pub fn Maintenance(comptime Platform: type) type {

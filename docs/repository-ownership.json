@@ -353,9 +353,9 @@
       "destination": "core/initramfs/root.zig"
     },
     {
-      "path": "core/maint/backend.zig",
+      "path": "core/maint/legacy_backend.zig",
       "owner": "pizza-maint",
-      "destination": "core/maint/backend.zig"
+      "destination": "core/maint/legacy_backend.zig"
     },
     {
       "path": "core/maint/devices.zig",
@@ -383,9 +383,9 @@
       "destination": "core/maint/main.zig"
     },
     {
-      "path": "core/maint/plan.zig",
+      "path": "core/maint/legacy_executor.zig",
       "owner": "pizza-maint",
-      "destination": "core/maint/plan.zig"
+      "destination": "core/maint/legacy_executor.zig"
     },
     {
       "path": "core/maint/root.zig",
@@ -533,9 +533,9 @@
       "destination": "core/maint/storage/filesystem/root.zig"
     },
     {
-      "path": "core/maint/storage/maintenance_session.zig",
+      "path": "core/maint/storage/recovery_session.zig",
       "owner": "pizza-maint",
-      "destination": "core/maint/storage/maintenance_session.zig"
+      "destination": "core/maint/storage/recovery_session.zig"
     },
     {
       "path": "core/maint/storage/memory.zig",
@@ -843,14 +843,14 @@
       "destination": "protocol/root.zig"
     },
     {
-      "path": "core/session.zig",
+      "path": "core/legacy_handoff.zig",
       "owner": "pizza-maint",
-      "destination": "core/session.zig"
+      "destination": "core/legacy_handoff.zig"
     },
     {
-      "path": "core/session/storage.zig",
+      "path": "core/legacy_handoff/storage.zig",
       "owner": "pizza-maint",
-      "destination": "core/session/storage.zig"
+      "destination": "core/legacy_handoff/storage.zig"
     },
     {
       "path": "core/tests.zig",
@@ -1563,144 +1563,54 @@
       "destination": "ui/partition/__pycache__/serve.cpython-314.pyc"
     },
     {
-      "path": "ui/partition/prototype/README.md",
+      "path": "ui/partition/app/README.md",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/README.md"
+      "destination": "ui/partition/app/README.md"
     },
     {
-      "path": "ui/partition/prototype/app.js",
+      "path": "ui/partition/app/app.js",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/app.js"
+      "destination": "ui/partition/app/app.js"
     },
     {
-      "path": "ui/partition/prototype/assets/fonts/CormorantGaramond-OFL.txt",
+      "path": "ui/partition/app/assets/fonts/CormorantGaramond-OFL.txt",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/assets/fonts/CormorantGaramond-OFL.txt"
+      "destination": "ui/partition/app/assets/fonts/CormorantGaramond-OFL.txt"
     },
     {
-      "path": "ui/partition/prototype/assets/fonts/CormorantGaramond.ttf",
+      "path": "ui/partition/app/assets/fonts/CormorantGaramond.ttf",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/assets/fonts/CormorantGaramond.ttf"
+      "destination": "ui/partition/app/assets/fonts/CormorantGaramond.ttf"
     },
     {
-      "path": "ui/partition/prototype/assets/fonts/DMSans-OFL.txt",
+      "path": "ui/partition/app/assets/fonts/DMSans-OFL.txt",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/assets/fonts/DMSans-OFL.txt"
+      "destination": "ui/partition/app/assets/fonts/DMSans-OFL.txt"
     },
     {
-      "path": "ui/partition/prototype/assets/fonts/DMSans.ttf",
+      "path": "ui/partition/app/assets/fonts/DMSans.ttf",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/assets/fonts/DMSans.ttf"
+      "destination": "ui/partition/app/assets/fonts/DMSans.ttf"
     },
     {
-      "path": "ui/partition/prototype/assets/pizza-mark.svg",
+      "path": "ui/partition/app/assets/pizza-mark.svg",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/assets/pizza-mark.svg"
+      "destination": "ui/partition/app/assets/pizza-mark.svg"
     },
     {
-      "path": "ui/partition/prototype/bootstrap.js",
+      "path": "ui/partition/app/index.html",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/bootstrap.js"
+      "destination": "ui/partition/app/index.html"
     },
     {
-      "path": "ui/partition/prototype/format-picker.js",
+      "path": "ui/partition/app/pizza.js",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/format-picker.js"
+      "destination": "ui/partition/app/pizza.js"
     },
     {
-      "path": "ui/partition/prototype/generated/contract.d.ts",
+      "path": "ui/partition/app/style.css",
       "owner": "pizza",
-      "destination": "ui/partition/prototype/generated/contract.d.ts"
-    },
-    {
-      "path": "ui/partition/prototype/generated/contract.js",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/generated/contract.js"
-    },
-    {
-      "path": "ui/partition/prototype/index.html",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/index.html"
-    },
-    {
-      "path": "ui/partition/prototype/live-model.js",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/live-model.js"
-    },
-    {
-      "path": "ui/partition/prototype/live.js",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/live.js"
-    },
-    {
-      "path": "ui/partition/prototype/partition-bar.js",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/partition-bar.js"
-    },
-    {
-      "path": "ui/partition/prototype/pizza.js",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/pizza.js"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/01-welcome.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/01-welcome.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/02-select-disk.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/02-select-disk.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/03-edit-slices.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/03-edit-slices.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/04-review-confirm.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/04-review-confirm.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/05-all-set.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/05-all-set.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/06-mobile-editor.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/06-mobile-editor.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/07-selection-fix.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/07-selection-fix.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/08-format-picker.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/08-format-picker.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/09-external-callouts.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/09-external-callouts.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/10-partition-bar-menu.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/10-partition-bar-menu.png"
-    },
-    {
-      "path": "ui/partition/prototype/screenshots/11-real-disk-inventory.png",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/screenshots/11-real-disk-inventory.png"
-    },
-    {
-      "path": "ui/partition/prototype/style.css",
-      "owner": "pizza",
-      "destination": "ui/partition/prototype/style.css"
+      "destination": "ui/partition/app/style.css"
     },
     {
       "path": "ui/partition/serve.py",
@@ -1721,6 +1631,71 @@
       "path": "ui/partition/test/transport_test.py",
       "owner": "pizza",
       "destination": "ui/partition/test/transport_test.py"
+    },
+    {
+      "path": "ui/partition/app/demo-backend.js",
+      "owner": "pizza",
+      "destination": "ui/partition/app/demo-backend.js"
+    },
+    {
+      "path": "ui/partition/app/disk-map.js",
+      "owner": "pizza",
+      "destination": "ui/partition/app/disk-map.js"
+    },
+    {
+      "path": "ui/partition/app/dom.js",
+      "owner": "pizza",
+      "destination": "ui/partition/app/dom.js"
+    },
+    {
+      "path": "ui/partition/app/execution-client.js",
+      "owner": "pizza",
+      "destination": "ui/partition/app/execution-client.js"
+    },
+    {
+      "path": "ui/partition/app/main.js",
+      "owner": "pizza",
+      "destination": "ui/partition/app/main.js"
+    },
+    {
+      "path": "ui/partition/app/plan-model.js",
+      "owner": "pizza",
+      "destination": "ui/partition/app/plan-model.js"
+    },
+    {
+      "path": "ui/partition/app/screenshots/apply.png",
+      "owner": "pizza",
+      "destination": "ui/partition/app/screenshots/apply.png"
+    },
+    {
+      "path": "ui/partition/app/screenshots/choose.png",
+      "owner": "pizza",
+      "destination": "ui/partition/app/screenshots/choose.png"
+    },
+    {
+      "path": "ui/partition/app/screenshots/plan-narrow.png",
+      "owner": "pizza",
+      "destination": "ui/partition/app/screenshots/plan-narrow.png"
+    },
+    {
+      "path": "ui/partition/app/screenshots/plan.png",
+      "owner": "pizza",
+      "destination": "ui/partition/app/screenshots/plan.png"
+    },
+    {
+      "path": "ui/partition/app/screenshots/review.png",
+      "owner": "pizza",
+      "destination": "ui/partition/app/screenshots/review.png"
+    },
+    {
+      "path": "ui/partition/app/transport.js",
+      "owner": "pizza",
+      "destination": "ui/partition/app/transport.js"
+    },
+    {
+      "path": "ui/partition/app/views.js",
+      "owner": "pizza",
+      "destination": "ui/partition/app/views.js"
     }
   ]
 }

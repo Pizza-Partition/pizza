@@ -2,7 +2,7 @@
 const std = @import("std");
 const libc = @import("libc");
 const proto = @import("proto");
-const boot = @import("../../boot/session.zig");
+const boot = @import("../../boot/ports.zig");
 const staging = @import("../../boot/staging.zig");
 const filename = staging.filename;
 const limit = staging.limit;
@@ -40,7 +40,7 @@ pub const Esp = struct {
         var bpb: [90]u8 = undefined;
         if (libc.pread(part_fd, &bpb, bpb.len, 0) != bpb.len or std.mem.readInt(u16, bpb[17..19], .little) != 0 or
             std.mem.readInt(u16, bpb[22..24], .little) != 0 or std.mem.readInt(u32, bpb[36..40], .little) == 0) return error.Fat32EspRequired;
-        if (!@import("session/store.zig").directory("/run/pizza-maintenance", 0o700)) return error.UnsafeEspDirectory;
+        if (!@import("ipc/store.zig").directory("/run/pizza-maintenance", 0o700)) return error.UnsafeEspDirectory;
         var random: [16]u8 = undefined;
         io.random(&random);
         const mountpoint = try a.printSentinel("/run/pizza-maintenance/{s}", .{std.fmt.bytesToHex(random, .lower)}, 0);
@@ -148,7 +148,7 @@ pub const Esp = struct {
         var left = bytes;
         while (left != 0) {
             const n: usize = @intCast(@min(left, zeros.len));
-            if (!@import("session/transport.zig").writeAll(fd, zeros[0..n])) return error.StageReservationFailed;
+            if (!@import("ipc/transport.zig").writeAll(fd, zeros[0..n])) return error.StageReservationFailed;
             left -= n;
         }
         if (libc.fsync(fd) != 0 or libc.syncfs(self.dir) != 0) return error.EspSyncFailed;
@@ -161,7 +161,7 @@ pub const Esp = struct {
         if (fd < 0) return error.StageNotReserved;
         defer _ = libc.close(fd);
         if (try fileSize(fd) != bytes.len) return error.StageReservationSizeChanged;
-        if (!@import("session/transport.zig").writeAll(fd, bytes)) return error.EspWriteFailed;
+        if (!@import("ipc/transport.zig").writeAll(fd, bytes)) return error.EspWriteFailed;
         if (libc.fsync(fd) != 0 or libc.syncfs(self.dir) != 0) return error.EspSyncFailed;
     }
     fn read(ctx: *anyopaque, a: std.mem.Allocator, _: std.Io, file: boot.File) !?[]const u8 {
@@ -174,7 +174,7 @@ pub const Esp = struct {
         if (size == 0 or size > limit(file)) return error.StagedArtifactTooLarge;
         const bytes = try a.alloc(u8, @intCast(size));
         errdefer a.free(bytes);
-        if (!@import("session/transport.zig").readExact(fd, bytes)) return error.StagedArtifactReadFailed;
+        if (!@import("ipc/transport.zig").readExact(fd, bytes)) return error.StagedArtifactReadFailed;
         return staging.decode(a, file, bytes, self.session_id, try proto.hexDigest(self.disk_identity));
     }
     pub fn releaseReservations(self: *Esp) !void {

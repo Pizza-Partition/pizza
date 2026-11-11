@@ -15,7 +15,7 @@ pub const Uefi = struct {
         var kind: native.win32.system.system_information.FIRMWARE_TYPE = .Unknown;
         if (native.kernel32.GetFirmwareType(&kind) == 0) return error.FirmwareUnavailable;
         if (kind != .Uefi) return error.UefiRequired;
-        if (!@import("session/security.zig").elevated()) return error.AdministratorRequired;
+        if (!@import("ipc/security.zig").elevated()) return error.AdministratorRequired;
         return .{ .writable = writable, .privilege = try native.Privilege.enable(.uefi) };
     }
 

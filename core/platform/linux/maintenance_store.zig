@@ -2,8 +2,8 @@
 const Self = @This();
 const std = @import("std");
 const libc = @import("libc");
-const transport = @import("session/transport.zig");
-const security = @import("session/store.zig");
+const transport = @import("ipc/transport.zig");
+const security = @import("ipc/store.zig");
 dir: c_int,
 lock: c_int,
 const MAX = 8 * 1024 * 1024;
