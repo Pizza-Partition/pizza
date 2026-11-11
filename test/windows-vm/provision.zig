@@ -111,7 +111,9 @@ pub fn run(init: std.process.Init) !void {
         // DVD prompt. Keep the initial key window open for firmware startup;
         // Windows installation's later reboots must still boot the OS disk.
         if (!is_resume and now - started < 120000 and now - last_key > 1000) {
-            var key: c_uint = 28; // Linux KEY_ENTER.
+            // A printable key dismisses the DVD prompt without activating
+            // Setup's focused Cancel button after the installer has started.
+            var key: c_uint = 44; // Linux KEY_Z.
             try lv.checked(lv.libvirt_c.virDomainSendKey(v.domain.?.domain, lv.libvirt_c.VIR_KEYCODE_SET_LINUX, 100, &key, 1, 0));
             last_key = now;
         }
