@@ -34,7 +34,11 @@ Windows 测试代理省略调试元数据，使独立干净构建得到相同的
 首次安装失败时保留日志和截图并立即失败，不自动恢复；原生套件和五个场景也不自动重试。
 Windows 安装器和测试 VM 均显式关闭 PMU。CI 转储确认 Windows 的 svchost/ETW 在
 `nt!HalpAllocatePmcCounterSetEx` 执行 `rdpmc` 时触发 0x3B/0xC0000096，属于虚拟 CPU
-性能计数器路径；这些磁盘测试不需要 PMU。配方摘要变化会使旧基线失效，要求重新冷安装。
+性能计数器路径；这些磁盘测试不需要 PMU。保留 `host-passthrough`，同时屏蔽
+`perfctr_core`（QEMU 名称 `perfctr-core`）和 `perfmon-v2`，使 CPU 能力声明与关闭的
+PMU 一致。仅设置 `pmu=off` 在本地 AMD 主机上触发了早期启动的 0x1E/0xC0000096；
+上游也报告过相同的 AMD PMU 能力位残留问题及这组[联合关闭方法](https://www.mail-archive.com/qemu-devel@nongnu.org/msg1232444.html)。
+配方摘要变化会使旧基线失效，要求重新冷安装。
 原始取证及微软调试器分析见[诊断运行](https://github.com/Pizza-Partition/pizza/actions/runs/43019388553)。
 `windows-cache.py` 的打包/恢复、输入失效、损坏与只读保护由实际 qcow2 转换测试覆盖。
 安装后的单次重启等待限制为五分钟，不再沿用一小时安装期限；Windows 崩溃时保留截图并失败。

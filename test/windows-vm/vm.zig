@@ -160,8 +160,10 @@ pub const Vm = struct {
         const code = try std.fs.path.join(v.a, &.{ v.base, "OVMF_CODE.fd" });
         v.xml = try v.a.print("<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'><name>pizza-test-{s}</name><memory unit='MiB'>4096</memory><vcpu>2</vcpu>" ++
             "<os><type arch='x86_64' machine='q35'>hvm</type><loader readonly='yes' type='pflash'>{s}</loader><nvram>{s}</nvram></os>" ++
-            // Match the installer's CPU capabilities; no PMU is needed by these tests.
-            "<features><acpi/><apic/><smm state='off'/><pmu state='off'/></features><cpu mode='host-passthrough'/><clock offset='localtime'/>" ++
+            // Match the installer's PMU and AMD feature masks on all boots.
+            "<features><acpi/><apic/><smm state='off'/><pmu state='off'/></features>" ++
+            "<cpu mode='host-passthrough'><feature policy='disable' name='perfctr_core'/>" ++
+            "<feature policy='disable' name='perfmon-v2'/></cpu><clock offset='localtime'/>" ++
             "<on_poweroff>destroy</on_poweroff><on_reboot>restart</on_reboot><on_crash>preserve</on_crash><devices>" ++
             "<emulator>/usr/bin/qemu-system-x86_64</emulator><controller type='scsi' model='virtio-scsi'/><controller type='usb' model='qemu-xhci'/>" ++
             "<disk type='file' device='disk'><driver name='qemu' type='qcow2' cache='none'/><source file='{s}'/><target dev='sda' bus='scsi'/><alias name='ua-system'/></disk>" ++
