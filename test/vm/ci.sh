@@ -49,9 +49,29 @@ CONFIG
     python3 test/vm/fetch-virtio.py "$out/drivers"
     ;;
   windows-base)
-    "$zig" build provision-windows-vm -j2 -Dheadless=true -Dvm-libvirt=/usr -- \
-      --stage "$out/artifacts/stage/bin" --drivers "$out/drivers" \
-      --out "$out/base" --timeout 3600
+    if ! "$zig" build provision-windows-vm -j2 -Dheadless=true -Dvm-libvirt=/usr -- \
+        --stage "$out/artifacts/stage/bin" --drivers "$out/drivers" \
+        --out "$out/base" --timeout 3600; then
+      # Only fixture installation can resume, once. Product tests are never retried.
+      # The provisioner refuses frozen baselines and verifies the original ISO.
+      [[ -f "$out/base/source.json" && -f "$out/base/windows.raw" && ! -f "$out/base/baseline.json" ]]
+      python3 - "$out/base" "$out/base-first-attempt" <<'PY'
+from pathlib import Path
+import shutil
+import sys
+source, saved = map(Path, sys.argv[1:])
+suffixes = {".json", ".jsonl", ".log", ".xml", ".png", ".ppm", ".stderr", ".stdout"}
+for path in source.rglob("*"):
+    if not path.is_symlink() and path.is_file() and path.suffix in suffixes:
+        target = saved / path.relative_to(source)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
+PY
+      echo 'Resuming the unfinished Windows fixture once; first-attempt evidence was retained.'
+      "$zig" build provision-windows-vm -j2 -Dheadless=true -Dvm-libvirt=/usr -- \
+        --stage "$out/artifacts/stage/bin" --drivers "$out/drivers" \
+        --out "$out/base" --resume --timeout 900
+    fi
     python3 test/vm/windows-cache.py pack --inputs "$out/baseline-inputs.json" \
       --base "$out/base" --cache "$out/baseline-cache"
     ;;
