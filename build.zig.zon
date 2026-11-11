@@ -1,6 +1,6 @@
 .{
     .name = .pizza,
-    .version = "0.5.6",
+    .version = "0.5.7",
     .fingerprint = 0xcfdd826fa2266c7f,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{

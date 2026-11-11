@@ -122,6 +122,9 @@ pub fn build(b: *std.Build) !void {
         _ = guest_sources.addCopyFile(b.path("test/windows-vm/cli.zig"), "cli.zig");
         const guest = b.addExecutable(.{ .name = "windows-vm-guest", .root_module = b.createModule(.{ .root_source_file = guest_source, .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "win32", .module = m }, .{ .name = "vm_common", .module = b.createModule(.{ .root_source_file = b.path("test/vm/common.zig"), .target = target, .optimize = optimize }) } } }) });
         configureCompile(guest, windows_lld);
+        // LLD's CodeView/PDB metadata changes between clean builds. The frozen
+        // baseline is bound to this executable's bytes, so omit debug metadata.
+        guest.root_module.strip = true;
         guest.root_module.addImport("clap", clap);
         const images = b.addTest(.{ .name = "windows-image-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.root("windows-image.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "win32", .module = m } } }) });
         configureCompile(images, windows_lld);
