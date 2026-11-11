@@ -107,7 +107,10 @@ pub fn run(init: std.process.Init) !void {
         _ = try v.domain.?.recv(&buf);
         const now = std.Io.Clock.awake.now(io).toMilliseconds();
         // Dismiss the DVD's first-boot key prompt; later boots use the installed OS.
-        if (!is_resume and now - started < 12000 and now - last_key > 1000) {
+        // A busy hosted runner can take longer than 12 seconds to reach the
+        // DVD prompt. Keep the initial key window open for firmware startup;
+        // Windows installation's later reboots must still boot the OS disk.
+        if (!is_resume and now - started < 120000 and now - last_key > 1000) {
             var key: c_uint = 28; // Linux KEY_ENTER.
             try lv.checked(lv.libvirt_c.virDomainSendKey(v.domain.?.domain, lv.libvirt_c.VIR_KEYCODE_SET_LINUX, 100, &key, 1, 0));
             last_key = now;
