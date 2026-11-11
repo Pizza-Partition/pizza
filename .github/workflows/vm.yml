@@ -1,149 +1,100 @@
-name: Full VM reboot acceptance
+name: Windows baseline crash diagnostics
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
-  workflow_call:
 permissions:
   contents: read
 concurrency:
-  group: vm-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: windows-crash-diagnostics
+  cancel-in-progress: false
 jobs:
-  reboot:
-    name: ${{ matrix.system }}
+  extract:
     runs-on: ubuntu-26.04
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        system: [linux-512, linux-4096, windows]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Require KVM and sufficient runner storage
-        env:
-          VM_SYSTEM: ${{ matrix.system }}
+      - name: Prepare disposable runner storage and forensic tools
         run: |
-          test -c /dev/kvm || { echo 'This runner does not provide KVM; full VM acceptance cannot run.' >&2; exit 1; }
-          if [[ "$VM_SYSTEM" == windows ]]; then
-            # Only disposable GitHub-hosted runner preinstalls are removed.
-            sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
-            test "$(df --output=avail -B1 . | tail -1)" -ge 35000000000
-          fi
-          mkdir -p .zig-cache
-      - name: Prepare VM environment and build Windows cache inputs
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VM_SYSTEM: ${{ matrix.system }}
-        run: |
-          set -euo pipefail
-          # libvirt daemonizes QEMU; PID 1 must reap those orphaned processes.
-          docker run --detach --init --name pizza-ci-vm --device=/dev/kvm \
-            -e GH_TOKEN -e RUNNER_TEMP=/runner-temp -e PIZZA_CI_UID="$(id -u)" \
-            -v "$PWD:/work" -v "$RUNNER_TEMP:/runner-temp" -w /work \
-            docker.io/library/archlinux:base@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722 \
-            sleep infinity
-          phase="$VM_SYSTEM"
-          if [[ "$VM_SYSTEM" == windows ]]; then phase=windows-prepare; fi
-          docker exec pizza-ci-vm bash test/vm/ci-environment.sh "$phase" \
-            2>&1 | tee ".zig-cache/ci-vm-$VM_SYSTEM.log"
-      - name: Read content-bound Windows cache keys
-        if: matrix.system == 'windows'
-        id: windows-keys
-        run: cat .zig-cache/ci-vm-windows/cache-keys.txt >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        if: matrix.system == 'windows'
-        id: windows-repair
-        continue-on-error: true
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo apt-get update
+          sudo apt-get install -y qemu-utils sleuthkit
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: .zig-cache/ci-vm-windows/baseline-cache
-          key: ${{ steps.windows-keys.outputs.baseline-key }}-repair-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: ${{ steps.windows-keys.outputs.baseline-key }}-repair-
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        if: matrix.system == 'windows' && steps.windows-repair.outputs.cache-matched-key == ''
-        id: windows-baseline
-        continue-on-error: true
-        with:
-          path: .zig-cache/ci-vm-windows/baseline-cache
-          key: ${{ steps.windows-keys.outputs.baseline-key }}
-      - name: Verify and restore the immutable Windows baseline
-        if: matrix.system == 'windows'
-        id: windows-ready
-        shell: bash
-        run: |
-          if [[ -f .zig-cache/ci-vm-windows/baseline-cache/manifest.json ]] && \
-             docker exec pizza-ci-vm runuser -u pizza-ci -- python3 test/vm/windows-cache.py restore \
-               --inputs .zig-cache/ci-vm-windows/baseline-inputs.json \
-               --cache .zig-cache/ci-vm-windows/baseline-cache --base .zig-cache/ci-vm-windows/base; then
-            echo 'ready=true' >> "$GITHUB_OUTPUT"
-          else
-            rm -rf .zig-cache/ci-vm-windows/baseline-cache
-            echo 'ready=false' >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true'
-        id: windows-iso
-        with:
-          path: ${{ steps.windows-keys.outputs.iso-path }}
-          key: ${{ steps.windows-keys.outputs.iso-key }}
-      - name: Fetch and verify Windows installation inputs on a baseline miss
-        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true'
+          key: windows-base-v1-1c24e0f47c3f943df429d36e4fcfc7aceebe03362a5f63c62ee7b692f72151a8
+          fail-on-cache-miss: true
+      - name: Verify cached bytes and extract Windows crash evidence read-only
         shell: bash
         run: |
           set -euo pipefail
-          docker exec pizza-ci-vm runuser -u pizza-ci -- bash test/vm/ci.sh windows-inputs \
-            2>&1 | tee -a .zig-cache/ci-vm-windows.log
-      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true' && steps.windows-iso.outputs.cache-hit != 'true'
-        with:
-          path: ${{ steps.windows-keys.outputs.iso-path }}
-          key: ${{ steps.windows-keys.outputs.iso-key }}
-      - name: Create and pack a frozen Windows baseline on a cache miss
-        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker exec pizza-ci-vm runuser -u pizza-ci -- bash test/vm/ci.sh windows-base \
-            2>&1 | tee -a .zig-cache/ci-vm-windows.log
-      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true'
-        with:
-          path: .zig-cache/ci-vm-windows/baseline-cache
-          key: ${{ (steps.windows-baseline.outputs.cache-matched-key != '' || steps.windows-repair.outputs.cache-matched-key != '') && format('{0}-repair-{1}-{2}', steps.windows-keys.outputs.baseline-key, github.run_id, github.run_attempt) || steps.windows-keys.outputs.baseline-key }}
-      - name: Run all Windows native and reboot scenarios using private overlays
-        if: matrix.system == 'windows'
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker exec pizza-ci-vm runuser -u pizza-ci -- bash test/vm/ci.sh windows-run \
-            2>&1 | tee -a .zig-cache/ci-vm-windows.log
-      - name: Verify complete matrix report on the runner
-        env:
-          VM_SYSTEM: ${{ matrix.system }}
-        run: python3 test/vm/check-results.py ".zig-cache/ci-vm-$VM_SYSTEM/run/results.json"
-      - name: Stop the private CI container
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          cache=Path('.zig-cache/ci-vm-windows/baseline-cache')
+          manifest=json.loads((cache/'manifest.json').read_text())
+          assert manifest['key']=='windows-base-v1-1c24e0f47c3f943df429d36e4fcfc7aceebe03362a5f63c62ee7b692f72151a8'
+          for name,expected in manifest['files'].items():
+              path=cache/name
+              assert path.parent==cache and not path.is_symlink()
+              assert expected=={'sha256':hashlib.file_digest(path.open('rb'),'sha256').hexdigest(),'size':path.stat().st_size}
+          PY
+          qemu-img convert -f qcow2 -O raw .zig-cache/ci-vm-windows/baseline-cache/windows.qcow2 "$RUNNER_TEMP/windows.raw"
+          chmod 444 "$RUNNER_TEMP/windows.raw"
+          python3 test/vm/extract-windows-crash.py "$RUNNER_TEMP/windows.raw" crash-evidence
+          cp .zig-cache/ci-vm-windows/baseline-cache/manifest.json crash-evidence/cache-manifest.json
+          cp .zig-cache/ci-vm-windows/baseline-cache/baseline.json crash-evidence/baseline.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
-        run: docker rm --force pizza-ci-vm || true
-      - name: Retain acceptance evidence even on failure
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: vm-${{ matrix.system }}-evidence
-          if-no-files-found: warn
+          name: windows-crash-evidence
+          path: crash-evidence/
+          if-no-files-found: error
           retention-days: 14
-          include-hidden-files: true
-          path: |
-            .zig-cache/ci-vm-packages.txt
-            .zig-cache/ci-vm-*.log
-            .zig-cache/ci-vm-*/**/*.json
-            .zig-cache/ci-vm-*/**/*.jsonl
-            .zig-cache/ci-vm-*/**/*.log
-            .zig-cache/ci-vm-*/**/*.stderr
-            .zig-cache/ci-vm-*/**/*.stdout
-            .zig-cache/ci-vm-*/**/*.xml
-            .zig-cache/ci-vm-*/**/*.png
-            .zig-cache/ci-vm-*/**/*.ppm
+  analyze:
+    needs: extract
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: windows-crash-evidence
+          path: crash-evidence
+      - name: Decode system events and analyze available kernel dumps
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory analysis | Out-Null
+          foreach ($eventLog in Get-ChildItem crash-evidence -Filter System.evtx -Recurse) {
+            $events = Get-WinEvent -Path $eventLog.FullName -Oldest -ErrorAction Continue
+            $selected = $events | Where-Object { $_.Id -in @(41,1001,1074,6008,7040,7045) }
+            $selected | Select-Object TimeCreated,Id,ProviderName,Message | Format-List | Out-File analysis/system-events.txt
+            ('<Events>' + (($selected | ForEach-Object { $_.ToXml() }) -join "`n") + '</Events>') | Set-Content analysis/system-events.xml
+          }
+          $dumps = @(Get-ChildItem crash-evidence -Filter '*.dmp' -Recurse)
+          if ($dumps.Count -gt 0) {
+            $debugger = 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\kd.exe'
+            if (-not (Test-Path $debugger)) {
+              $installer = Join-Path $env:RUNNER_TEMP winsdksetup.exe
+              Invoke-WebRequest 'https://download.microsoft.com/download/e6cfffdc-0d3e-4c6c-96d7-d491da459a07/KIT_BUNDLE_WINDOWSSDK_MEDIACREATION/winsdksetup.exe' -OutFile $installer
+              $signature = Get-AuthenticodeSignature $installer
+              if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'Invalid Microsoft SDK installer signature' }
+              $install = Start-Process $installer -ArgumentList '/quiet','/norestart','/features','OptionId.WindowsDesktopDebuggers' -PassThru -Wait
+              if ($install.ExitCode -notin @(0,3010)) { throw "SDK debugger installation failed: $($install.ExitCode)" }
+            }
+            if (-not (Test-Path $debugger)) { throw 'Kernel debugger is unavailable' }
+            $symbols = Join-Path $env:RUNNER_TEMP symbols
+            foreach ($dump in $dumps) {
+              $log = Join-Path $PWD ('analysis/' + $dump.Name + '.txt')
+              & $debugger -y "srv*$symbols*https://msdl.microsoft.com/download/symbols" -z $dump.FullName -logo $log -c '!analyze -v; .bugcheck; kv; lm t n; q'
+              if ($LASTEXITCODE -ne 0) { throw "Kernel dump analysis failed: $LASTEXITCODE" }
+            }
+          } else {
+            'No kernel dump was present in the frozen baseline.' | Set-Content analysis/no-dump.txt
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: windows-crash-analysis
+          path: analysis/
+          if-no-files-found: error
+          retention-days: 14
