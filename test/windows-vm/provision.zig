@@ -77,7 +77,8 @@ pub fn run(init: std.process.Init) !void {
     try v.startDaemon();
     const xml = try a.print("<domain type='kvm'><name>pizza-install-{s}</name><memory unit='MiB'>4096</memory><vcpu>4</vcpu>" ++
         "<os><type arch='x86_64' machine='q35'>hvm</type><loader readonly='yes' type='pflash'>{s}</loader><nvram>{s}</nvram></os>" ++
-        "<features><acpi/><apic/><smm state='off'/></features><cpu mode='host-passthrough'/><clock offset='localtime'/>" ++
+        // Nested KVM PMU access can fault in Windows' ETW PMC setup (RDPMC).
+        "<features><acpi/><apic/><smm state='off'/><pmu state='off'/></features><cpu mode='host-passthrough'/><clock offset='localtime'/>" ++
         "<on_poweroff>destroy</on_poweroff><on_reboot>restart</on_reboot><devices><emulator>/usr/bin/qemu-system-x86_64</emulator>" ++
         "<controller type='scsi' model='virtio-scsi'/><controller type='usb' model='qemu-xhci'/>" ++
         "<disk type='file' device='disk'><driver name='qemu' type='raw' cache='none'/><source file='{s}'/><target dev='sda' bus='sata'/><boot order='2'/></disk>" ++
