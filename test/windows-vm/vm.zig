@@ -392,6 +392,11 @@ pub const Vm = struct {
         v.updates_frozen = true;
     }
     pub fn restartWindows(v: *Vm) !void {
+        // Provisioning's installation deadline is much longer than one reboot.
+        // A crashed guest must not consume that whole deadline waiting for UEFI.
+        const saved_timeout = v.timeout_ms;
+        v.timeout_ms = @min(v.timeout_ms, 300000);
+        defer v.timeout_ms = saved_timeout;
         const start = v.transcript.mark();
         try v.guest("restart", "accept");
         try v.wait("BdsDxe: starting", start);

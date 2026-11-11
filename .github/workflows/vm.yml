@@ -34,7 +34,7 @@ jobs:
             test "$(df --output=avail -B1 . | tail -1)" -ge 35000000000
           fi
           mkdir -p .zig-cache
-      - name: Rebuild baseline and run all five reboot scenarios
+      - name: Prepare VM environment and build Windows cache inputs
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -42,15 +42,92 @@ jobs:
         run: |
           set -euo pipefail
           # libvirt daemonizes QEMU; PID 1 must reap those orphaned processes.
-          docker run --rm --init --device=/dev/kvm \
+          docker run --detach --init --name pizza-ci-vm --device=/dev/kvm \
             -e GH_TOKEN -e RUNNER_TEMP=/runner-temp -e PIZZA_CI_UID="$(id -u)" \
             -v "$PWD:/work" -v "$RUNNER_TEMP:/runner-temp" -w /work \
             docker.io/library/archlinux:base@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722 \
-            bash test/vm/ci-environment.sh "$VM_SYSTEM" 2>&1 | tee ".zig-cache/ci-vm-$VM_SYSTEM.log"
+            sleep infinity
+          phase="$VM_SYSTEM"
+          if [[ "$VM_SYSTEM" == windows ]]; then phase=windows-prepare; fi
+          docker exec pizza-ci-vm bash test/vm/ci-environment.sh "$phase" \
+            2>&1 | tee ".zig-cache/ci-vm-$VM_SYSTEM.log"
+      - name: Read content-bound Windows cache keys
+        if: matrix.system == 'windows'
+        id: windows-keys
+        run: cat .zig-cache/ci-vm-windows/cache-keys.txt >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: matrix.system == 'windows'
+        id: windows-repair
+        continue-on-error: true
+        with:
+          path: .zig-cache/ci-vm-windows/baseline-cache
+          key: ${{ steps.windows-keys.outputs.baseline-key }}-repair-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.windows-keys.outputs.baseline-key }}-repair-
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: matrix.system == 'windows' && steps.windows-repair.outputs.cache-matched-key == ''
+        id: windows-baseline
+        continue-on-error: true
+        with:
+          path: .zig-cache/ci-vm-windows/baseline-cache
+          key: ${{ steps.windows-keys.outputs.baseline-key }}
+      - name: Verify and restore the immutable Windows baseline
+        if: matrix.system == 'windows'
+        id: windows-ready
+        shell: bash
+        run: |
+          if [[ -f .zig-cache/ci-vm-windows/baseline-cache/manifest.json ]] && \
+             docker exec pizza-ci-vm runuser -u pizza-ci -- python3 test/vm/windows-cache.py restore \
+               --inputs .zig-cache/ci-vm-windows/baseline-inputs.json \
+               --cache .zig-cache/ci-vm-windows/baseline-cache --base .zig-cache/ci-vm-windows/base; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            rm -rf .zig-cache/ci-vm-windows/baseline-cache
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true'
+        id: windows-iso
+        with:
+          path: ${{ steps.windows-keys.outputs.iso-path }}
+          key: ${{ steps.windows-keys.outputs.iso-key }}
+      - name: Fetch and verify Windows installation inputs on a baseline miss
+        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec pizza-ci-vm runuser -u pizza-ci -- bash test/vm/ci.sh windows-inputs \
+            2>&1 | tee -a .zig-cache/ci-vm-windows.log
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true' && steps.windows-iso.outputs.cache-hit != 'true'
+        with:
+          path: ${{ steps.windows-keys.outputs.iso-path }}
+          key: ${{ steps.windows-keys.outputs.iso-key }}
+      - name: Create and pack a frozen Windows baseline on a cache miss
+        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec pizza-ci-vm runuser -u pizza-ci -- bash test/vm/ci.sh windows-base \
+            2>&1 | tee -a .zig-cache/ci-vm-windows.log
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: matrix.system == 'windows' && steps.windows-ready.outputs.ready != 'true'
+        with:
+          path: .zig-cache/ci-vm-windows/baseline-cache
+          key: ${{ (steps.windows-baseline.outputs.cache-matched-key != '' || steps.windows-repair.outputs.cache-matched-key != '') && format('{0}-repair-{1}-{2}', steps.windows-keys.outputs.baseline-key, github.run_id, github.run_attempt) || steps.windows-keys.outputs.baseline-key }}
+      - name: Run all Windows native and reboot scenarios using private overlays
+        if: matrix.system == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec pizza-ci-vm runuser -u pizza-ci -- bash test/vm/ci.sh windows-run \
+            2>&1 | tee -a .zig-cache/ci-vm-windows.log
       - name: Verify complete matrix report on the runner
         env:
           VM_SYSTEM: ${{ matrix.system }}
         run: python3 test/vm/check-results.py ".zig-cache/ci-vm-$VM_SYSTEM/run/results.json"
+      - name: Stop the private CI container
+        if: always()
+        run: docker rm --force pizza-ci-vm || true
       - name: Retain acceptance evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

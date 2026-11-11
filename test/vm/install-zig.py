@@ -13,12 +13,16 @@ source = lock["x86_64-linux"]
 out = Path(os.environ["RUNNER_TEMP"]) / "pizza-zig"
 out.mkdir(parents=True, exist_ok=True)
 archive = out / "zig.tar.xz"
-digest = hashlib.sha256()
-with urllib.request.urlopen(source["url"], timeout=120) as response, archive.open("wb") as dest:
-    while chunk := response.read(1024 * 1024):
-        digest.update(chunk)
-        dest.write(chunk)
-if digest.hexdigest() != source["sha256"]:
+def checksum(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+if not archive.is_file() or checksum(archive) != source["sha256"]:
+    with urllib.request.urlopen(source["url"], timeout=120) as response, archive.open("wb") as dest:
+        while chunk := response.read(1024 * 1024):
+            dest.write(chunk)
+if checksum(archive) != source["sha256"]:
     raise SystemExit("Zig archive SHA-256 mismatch")
 with tarfile.open(archive) as package:
     package.extractall(out, filter="data")
