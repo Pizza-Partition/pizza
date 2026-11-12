@@ -210,3 +210,16 @@ zig build test-vm-config test-vm-download test-vm-console -Dheadless=true
 原生测试 156 项通过、1 项 Linux 专属测试跳过，三次强制断电及正常关机成功。
 Linux 512/4096 字节矩阵也各五场景通过；共用断言比较整个批准/原始布局。
 汇总与产物摘要见 `.zig-cache/shared-e2e/validation.json`。
+
+
+2026-11-12，Windows VM 改用共享的 `cpu.zig`：Intel `Icelake-Server-v6`、关闭 PMU，
+并屏蔽本地 AMD 宿主无法提供的 PCID、LA57、部分漏洞状态位及嵌套 VT-x 特性；
+保留 libvirt 完整 CPU 校验。安装器和所有验收覆盖层使用相同配置，CPU 定义参与
+基线缓存摘要，旧的 host-passthrough 基线不会被复用。宿主若不支持其余所需特性，
+VM 会明确启动失败，不会自动降级 CPU 型号。
+
+该配置在 AMD Ryzen 5 7500F / QEMU 11.1.3 / libvirt 12.8.0 上完成一次全新安装、
+维护稳定检查、冻结更新、重启后检查、能力探测及正常关机，生成只读基线，未使用
+失败恢复重试。证据位于 `.zig-cache/review-e2e-20261110/intel-icelake-trial/result.json`。
+这项本地验证仅覆盖基线制作，完整原生及重启验收由本次 CI 验证；其结果不能等同于
+真实 Intel 硬件 PMU 测试，也尚未证明原始云端蓝屏的完整上游根因。

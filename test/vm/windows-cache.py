@@ -34,6 +34,7 @@ def inputs(stage):
         "guest_sha256": digest(stage / "windows-vm-guest.exe"),
         "recipe": {p: digest(p) for p in (
             "test/windows-vm/provision.zig", "test/windows-vm/autounattend.xml",
+            "test/windows-vm/cpu.zig",
             "test/windows-vm/vm.zig", "test/windows-vm/libvirt.zig",
             "test/windows-vm/virtio.json", "test/vm/common.zig",
         )},
