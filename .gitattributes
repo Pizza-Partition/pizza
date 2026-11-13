@@ -1,2 +1,5 @@
 *.zig text eol=lf
 *.zon text eol=lf
+# Shared snapshots are hashed byte-for-byte on every platform.
+vendor/pizza-protocol/** text eol=lf
+tools/*.mjs text eol=lf
