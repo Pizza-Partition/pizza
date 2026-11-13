@@ -149,13 +149,14 @@ jobs:
           set -euo pipefail
           node tools/install-zig.mjs
           sudo apt-get update
-          sudo apt-get install -y binutils libarchive-tools systemd-ukify systemd-boot-efi qemu-system-x86
+          sudo apt-get install -y binutils libarchive-tools e2fsprogs dosfstools mtools ntfs-3g btrfs-progs systemd-ukify systemd-boot-efi qemu-system-x86
           python3 scripts/fetch-efi-stub.py "$RUNNER_TEMP/linuxx64.efi.stub"
           python3 host/test/release/candidate.py lock --root candidate-runtime --template config/bundle/release.json --commit "$BUNDLE_COMMIT"
       - name: Build and test the exact maintenance candidate
         if: inputs.maintenance-artifact == ''
         run: |
           set -euo pipefail
+          bash tools/fetch-deps.sh
           zig build test-unit test-session test-maint-session-image test-filesystems -Doptimize=safe -j4 --summary all
           zig build bundle image uki protocol-package -Dcandidate-runtime="$PWD/candidate-runtime" -Duki-stub="$RUNNER_TEMP/linuxx64.efi.stub" -Doptimize=safe -j4 --summary all
           zig build test-maintenance -Doptimize=safe -j4 -- --candidate-runtime --bundle zig-out/runtime/bundle --kernel-version 7.2.11-arch1-1 --timeout 180
