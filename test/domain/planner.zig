@@ -95,3 +95,18 @@ test "format and rename is one executable operation carrying the new filesystem 
         try std.testing.expect(!missing.executable);
     }
 }
+
+test "offline admission rejects labels the maintenance compiler cannot honor" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var f = fixture();
+    f.inventory.disks = &.{f.disk};
+    var desired = @import("../../core/planning/editor.zig").retained(f.disk.partitions[0]);
+    desired.name = "Reviewed label";
+    desired.retain_data = false;
+    const draft = try @import("../../core/planning/editor.zig").generate(a, f.inventory, f.disk, &.{desired});
+    const result = try @import("../../core/planning/planner.zig").validate(a, f.inventory, draft, Capabilities{ .available = false });
+    for (result.diagnostics) |d| if (std.mem.eql(u8, d.code, "maintenance_label_unavailable") and d.severity == .@"error") return;
+    return error.MissingMaintenanceLabelDiagnostic;
+}

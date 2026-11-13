@@ -12,7 +12,7 @@ The accompanying frontend rewrite is retained and checked through the fixture-ba
 
 Local acceptance includes domain/host/image/VM-helper tests, Windows cross-compilation, a complete Linux GUI build, JavaScript tests and 35 browser checks across seven window sizes. Release CI additionally runs Windows image tests on a private VHDX.
 
-Whole-sale namespace renaming and moving duplicated lease/planner code into a new protocol package remain architectural follow-up work, rather than claims of this defect-fix release. Physical firmware, sparse-GPT Windows boot and real power-loss acceptance remain separate from image/fault-injection tests. The repository-ownership JSON is a historical split snapshot, not a live frontend inventory.
+Shared lease codecs and pure planner admission now live in the maintenance-owned protocol package. Pizza consumes a content-locked snapshot, and the sync command also updates the single canonical toolchain installer. Host scheduling and offline feasibility remain application policies. Physical firmware, sparse-GPT Windows boot and real power-loss acceptance remain separate from image/fault-injection tests. The repository-ownership JSON is a historical split snapshot, not a live frontend inventory.
 
 ## Full reboot acceptance follow-up
 
@@ -52,3 +52,22 @@ shutdown cleanup fails before the Windows baseline can be saved.
 The Windows suite uses the same basic VGA device as its installer and checks
 that device before downloading the ISO; it does not require an optional VirtIO
 GPU module absent from the minimal CI QEMU installation.
+
+## Candidate gate and primary pizza view
+
+The candidate workflow freezes all three source commits, builds one runtime and one
+maintenance payload, and supplies that exact maintenance directory to the host packages
+and Linux 512/4096 plus Windows VM matrix. Each scenario must provide a bound completion
+receipt and prove idempotent import. Release jobs consume those tested artifacts. The
+Windows report retains receipts instead of dropping them during aggregation. Candidate
+runtime inputs are explicit and content checked; ordinary downloaded releases continue
+to require publisher authentication.
+
+Maintenance preparation can be discovered from protected backend state after losing a
+browser reference. Linux IPC distinguishes absent helpers from permission, resource,
+unsafe-reference and transport failures; an uncertain response after submission cannot
+trigger automatic replay. The pizza now occupies the main plan area, supports pointer
+and keyboard selection, and retains the exact layout/table in expandable details.
+
+Local validation and unexecuted cloud acceptance are reported separately in the review
+response. Workflow configuration is not itself evidence that the reboot matrix passed.

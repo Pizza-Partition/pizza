@@ -8,7 +8,8 @@ pub const cli = @import("cli.zig");
 pub const provision = @import("provision.zig").run;
 const c_api = lv.libvirt_c;
 pub var context: *Vm = undefined;
-const Result = struct { case: []const u8, outcome: []const u8, id: []const u8, hash: []const u8 };
+const Receipt = struct { version: u16, id: []const u8, plan_digest: []const u8, program_digest: []const u8, disk_identity: []const u8, image_digest: []const u8, outcome: []const u8 };
+const Result = struct { case: []const u8, outcome: []const u8, id: []const u8, hash: []const u8, receipt: Receipt, idempotent: bool };
 
 pub const Vm = struct {
     a: std.mem.Allocator,
@@ -450,10 +451,10 @@ pub const Vm = struct {
         try v.login();
         try v.guest("verify", case);
         try v.collect();
-        const verification = try std.json.parseFromSliceLeaky(struct { case: []const u8, outcome: []const u8, id: []const u8, hash: []const u8, receipt: struct { image_digest: []const u8, program_digest: []const u8 }, idempotent: bool }, v.a, try std.Io.Dir.cwd().readFileAlloc(v.io, try v.path(try v.a.print("guest/{s}-verify.json", .{case})), v.a, .limited(512 * 1024 * 1024)), .{ .ignore_unknown_fields = true });
+        const verification = try std.json.parseFromSliceLeaky(Result, v.a, try std.Io.Dir.cwd().readFileAlloc(v.io, try v.path(try v.a.print("guest/{s}-verify.json", .{case})), v.a, .limited(512 * 1024 * 1024)), .{ .ignore_unknown_fields = true });
         const image_hash = try hashFile(v.io, try std.fs.path.join(v.a, &.{ v.stage, "maint.efi" }));
         if (!std.mem.eql(u8, &image_hash.sha256, verification.receipt.image_digest) or verification.receipt.program_digest.len != 64) return error.ReceiptImageMismatch;
-        try v.results.append(v.a, .{ .case = case, .outcome = verification.outcome, .id = verification.id, .hash = verification.hash });
+        try v.results.append(v.a, .{ .case = case, .outcome = verification.outcome, .id = verification.id, .hash = verification.hash, .receipt = verification.receipt, .idempotent = verification.idempotent });
         try v.save("results.json", .{ .status = "running", .native = v.native, .results = v.results.items });
     }
     pub fn powercut(v: *Vm) !void {

@@ -7,7 +7,7 @@ system=$mode
 out="$PWD/.zig-cache/ci-vm-$system"
 mkdir -p "$out"
 [[ -r /dev/kvm && -w /dev/kvm ]]
-zig=$(python3 test/vm/install-zig.py)
+zig="$(node tools/install-zig.mjs)/zig"
 export ZIG="$zig"
 
 case "$mode" in
@@ -63,6 +63,16 @@ CONFIG
     for phase in prepare inputs base run; do bash "$0" "windows-$phase"; done
     ;;
   *) echo "Unknown VM matrix entry: $mode" >&2; exit 2 ;;
+esac
+case "$mode" in
+  linux-*|windows-run)
+    if [[ -n ${PIZZA_MAINTENANCE_SOURCE:-} ]]; then
+      python3 test/release/candidate.py verify --root "$PIZZA_MAINTENANCE_SOURCE"
+      stage="$out/stage"
+      [[ "$mode" != windows-run ]] || stage="$out/artifacts/stage"
+      python3 test/release/candidate.py evidence --root "$PIZZA_MAINTENANCE_SOURCE" --stage "$stage" --report "$out/run/results.json"
+    fi
+    ;;
 esac
 case "$mode" in
   linux-*|windows-run) python3 test/vm/check-results.py "$out/run/results.json" ;;

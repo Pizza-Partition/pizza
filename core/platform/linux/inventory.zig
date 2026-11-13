@@ -244,6 +244,23 @@ fn wireGuid(a: std.mem.Allocator, text: ?[]const u8) !?[]const u8 {
     return try a.dupe(u8, &std.fmt.bytesToHex(raw, .lower));
 }
 
+fn encryptionState(signature: ?[]const u8) @FieldType(wire.HostPartition, "encryption") {
+    const fs = signature orelse return .unknown;
+    if (std.mem.eql(u8, fs, "crypto_LUKS") or std.mem.eql(u8, fs, "BitLocker")) return .encrypted;
+    // Recognizing a container signature is not evidence of a plain volume.
+    // Only filesystems whose signatures we understand may grant write access.
+    for ([_][]const u8{ "ext2", "ext3", "ext4", "xfs", "btrfs", "vfat", "ntfs", "exfat" }) |plain| {
+        if (std.mem.eql(u8, fs, plain)) return .none;
+    }
+    return .unknown;
+}
+
+test "Linux signature classification keeps encrypted and unknown containers view-only" {
+    for ([_][]const u8{ "crypto_LUKS", "BitLocker" }) |fs| try std.testing.expectEqual(.encrypted, encryptionState(fs));
+    for ([_]?[]const u8{ null, "LVM2_member", "linux_raid_member", "future_container", "" }) |fs| try std.testing.expectEqual(.unknown, encryptionState(fs));
+    for ([_][]const u8{ "ext2", "ext3", "ext4", "xfs", "btrfs", "vfat", "ntfs", "exfat" }) |fs| try std.testing.expectEqual(.none, encryptionState(fs));
+}
+
 fn partition(a: std.mem.Allocator, io: std.Io, disk_id: ?[32]u8, p: bd.BDPartSpec, device: ?devices.Device) !wire.HostPartition {
     const path = try a.dupeSentinel(u8, std.mem.span(p.path), 0);
     const uuid = try wireGuid(a, stringView(p.uuid));
@@ -274,7 +291,7 @@ fn partition(a: std.mem.Allocator, io: std.Io, disk_id: ?[32]u8, p: bd.BDPartSpe
         .name = if (label) |v| try a.dupe(u8, v) else "",
         .offset = try a.print("{d}", .{p.start}),
         .length = try a.print("{d}", .{p.size}),
-        .encryption = if (fs) |v| (if (std.mem.eql(u8, v, "crypto_LUKS")) .encrypted else .none) else .unknown,
+        .encryption = encryptionState(fs),
         .filesystem = if (kind) |v| switch (v) {
             .ext2, .ext3, .ext4, .xfs, .btrfs, .vfat, .ntfs, .exfat => v,
             else => null,
@@ -289,6 +306,7 @@ fn partition(a: std.mem.Allocator, io: std.Io, disk_id: ?[32]u8, p: bd.BDPartSpe
         .free_bytes = if (mount.available) |n| try a.print("{d}", .{n}) else null,
     };
     const caps = try a.alloc(wire.HostCapability, 5);
+    const writable = !protected and result.encryption == .none;
     var err: [*c]bd.GError = null;
     defer bd.g_clear_error(&err);
     var utility: [*c]u8 = null;
@@ -298,13 +316,13 @@ fn partition(a: std.mem.Allocator, io: std.Io, disk_id: ?[32]u8, p: bd.BDPartSpe
     bd.g_clear_error(&err);
     mode &= if (mounted) bd.BD_FS_ONLINE_GROW else bd.BD_FS_OFFLINE_GROW | bd.BD_FS_OFFLINE_SHRINK;
     if (!mounted and fs != null and (std.mem.eql(u8, fs.?, "btrfs") or std.mem.eql(u8, fs.?, "xfs"))) mode = 0;
-    caps[0] = capability(.resize, !protected and ok and mode != 0, "filesystem_and_volume_validation_required", try takeString(a, utility), mode);
+    caps[0] = capability(.resize, writable and ok and mode != 0, "filesystem_and_volume_validation_required", try takeString(a, utility), mode);
     utility = null;
     ok = if (fs_z) |f| bd.bd_fs_can_set_label(f, &utility, &err) != 0 else false;
     bd.g_clear_error(&err);
-    caps[1] = capability(.label, !protected and ok, "filesystem_label", try takeString(a, utility), 0);
-    caps[2] = capability(.delete, !protected and !mounted, "unmounted_partition_required", null, 0);
-    caps[3] = capability(.format, !protected and !mounted, "filesystem_tool_required", null, 0);
+    caps[1] = capability(.label, writable and ok, "filesystem_label", try takeString(a, utility), 0);
+    caps[2] = capability(.delete, writable and !mounted, "unmounted_partition_required", null, 0);
+    caps[3] = capability(.format, writable and !mounted, "filesystem_tool_required", null, 0);
     caps[4] = capability(.move, false, "maintenance_required", null, 0);
     result.capabilities = caps;
     return result;

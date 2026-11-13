@@ -9,7 +9,7 @@ pub fn run(a: std.mem.Allocator, draft: wire.PlanDraft, plan: wire.ValidatedPlan
     try backend.persist(session.*);
     var expected = try state.disk(initial, draft.disk_identity);
     for (plan.host_operations) |op| {
-        if (try cancel(session, backend)) return;
+        if (try cancel(a, session, backend)) return;
         const actual = backend.query() catch |err| return stop(a, session, backend, err);
         const disk = state.disk(actual, draft.disk_identity) catch |err| return stop(a, session, backend, err);
         state.unchanged(expected, disk) catch |err| return stop(a, session, backend, err);
@@ -18,11 +18,11 @@ pub fn run(a: std.mem.Allocator, draft: wire.PlanDraft, plan: wire.ValidatedPlan
         } else null;
         session.message = try a.print("Starting {s} for {s}; interruption requires inspecting actual disk state.", .{ @tagName(op.kind), op.partition_id });
         try backend.persist(session.*);
-        if (try cancel(session, backend)) return;
+        if (try cancel(a, session, backend)) return;
         backend.apply(disk, op, desired) catch |err| {
             session.status = if (session.completed != 0) .partial else .needs_recheck;
             session.message = try a.dupe(u8, backend.failureMessage(err));
-            session.actual = backend.query() catch null;
+            try observeAfterStop(a, session, backend);
             session.cancel_requested = backend.cancelled();
             try backend.persist(session.*);
             return;
@@ -44,21 +44,47 @@ pub fn run(a: std.mem.Allocator, draft: wire.PlanDraft, plan: wire.ValidatedPlan
     session.cancel_requested = backend.cancelled();
     try backend.persist(session.*);
 }
-fn cancel(session: *wire.ExecutionSession, backend: anytype) !bool {
+fn cancel(a: std.mem.Allocator, session: *wire.ExecutionSession, backend: anytype) !bool {
     if (!backend.cancelled()) return false;
     session.status = .cancelled;
     session.cancel_requested = true;
     session.message = "Stopped before the next step. Completed host changes remain on disk and have no unified Undo.";
-    session.actual = backend.query() catch null;
+    try observeAfterStop(a, session, backend);
     try backend.persist(session.*);
     return true;
 }
 pub fn stop(a: std.mem.Allocator, session: *wire.ExecutionSession, backend: anytype, err: anyerror) !void {
     session.status = if (session.completed != 0) .partial else .needs_recheck;
     session.message = try a.print("{s}: stopped before another operation. Inspect actual disk state; changes may already be present.", .{@errorName(err)});
-    session.actual = backend.query() catch null;
+    try observeAfterStop(a, session, backend);
     session.cancel_requested = backend.cancelled();
     try backend.persist(session.*);
+}
+
+fn observeAfterStop(a: std.mem.Allocator, session: *wire.ExecutionSession, backend: anytype) !void {
+    session.actual = null;
+    session.actual = backend.query() catch |err| {
+        session.message = try a.print("{s} Actual disk state could not be read: {s}.", .{ session.message, @errorName(err) });
+        return;
+    };
+}
+
+test "failed stop observation preserves both the operation error and the inventory error" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const Backend = struct {
+        pub fn query(_: *@This()) !wire.InventorySnapshot {
+            return error.DeviceDisconnected;
+        }
+    };
+    var backend: Backend = .{};
+    var session: wire.ExecutionSession = .{ .version = proto.API_VERSION, .id = "fixture", .plan_digest = "fixture", .status = .needs_recheck, .completed = 0, .total = 1, .message = "FilesystemWriteFailed" };
+    session.actual = .{ .version = proto.API_VERSION, .snapshot_id = "stale", .platform = .linux, .disks = &.{} };
+    try observeAfterStop(arena.allocator(), &session, &backend);
+    try std.testing.expect(session.actual == null);
+    try std.testing.expect(std.mem.indexOf(u8, session.message, "FilesystemWriteFailed") != null);
+    try std.testing.expect(std.mem.indexOf(u8, session.message, "DeviceDisconnected") != null);
+    try std.testing.expectEqual(.needs_recheck, session.status);
 }
 
 const Mock = struct {

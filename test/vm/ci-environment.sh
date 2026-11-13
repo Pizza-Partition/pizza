@@ -4,7 +4,7 @@ set -euo pipefail
 # Runs only in the disposable Arch CI container, never on the user's host.
 [[ -f /etc/arch-release && $(id -u) == 0 ]]
 printf 'Server = https://archive.archlinux.org/repos/2026/10/30/$repo/os/$arch\n' > /etc/pacman.d/mirrorlist
-pacman -Syyuu --noconfirm --needed archlinux-keyring git python python-pefile \
+pacman -Syyuu --noconfirm --needed archlinux-keyring git nodejs python python-pefile \
   curl binutils libarchive pkgconf gcc glib2 systemd systemd-ukify \
   libblockdev libblockdev-fs libblockdev-part libblockdev-swap \
   e2fsprogs dosfstools mtools util-linux parted kmod cpio \

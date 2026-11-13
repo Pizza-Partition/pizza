@@ -1,0 +1,227 @@
+name: Cross-repository candidate acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      host-ref:
+        description: Pizza source ref
+        default: main
+      maintenance-ref:
+        description: pizza-maint source ref
+        default: main
+      bundle-ref:
+        description: pizza-bundle source ref
+        default: main
+  workflow_call:
+    inputs:
+      host-ref:
+        type: string
+        default: main
+      maintenance-ref:
+        type: string
+        default: main
+      bundle-ref:
+        type: string
+        default: main
+      runtime-artifact:
+        description: Already built runtime artifact from this workflow run
+        type: string
+        default: ''
+      maintenance-artifact:
+        description: Verified published maintenance artifact from this workflow run
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  sources:
+    runs-on: ubuntu-26.04
+    outputs:
+      host: ${{ steps.refs.outputs.host }}
+      maintenance: ${{ steps.refs.outputs.maintenance }}
+      bundle: ${{ steps.refs.outputs.bundle }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: Pizza-Partition/Pizza
+          ref: ${{ inputs.host-ref }}
+          path: host
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: Pizza-Partition/pizza-maint
+          ref: ${{ inputs.maintenance-ref }}
+          path: maintenance
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: Pizza-Partition/pizza-bundle
+          ref: ${{ inputs.bundle-ref }}
+          path: bundle
+          persist-credentials: false
+      - name: Freeze the complete source combination and check shared sources
+        id: refs
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          sources = {name: subprocess.check_output(['git', '-C', name, 'rev-parse', 'HEAD'], text=True).strip() for name in ['host', 'maintenance', 'bundle']}
+          with open('sources.json', 'w') as stream: json.dump(sources, stream, indent=2)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              for name, sha in sources.items(): print(f'{name}={sha}', file=stream)
+          PY
+          node host/tools/sync-shared.mjs --source maintenance --check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-sources
+          path: sources.json
+          if-no-files-found: error
+  runtime:
+    if: inputs.maintenance-artifact == ''
+    needs: sources
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    container:
+      image: docker.io/library/archlinux:base@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install the pinned runtime build environment
+        if: inputs.runtime-artifact == ''
+        run: |
+          printf 'Server = https://archive.archlinux.org/repos/2026/10/13/$repo/os/$arch\n' > /etc/pacman.d/mirrorlist
+          pacman -Syyuu --noconfirm --needed archlinux-keyring git patchelf binutils python gcc pkgconf curl libarchive kmod cpio zstd xz gzip docker docker-buildx qemu-system-x86
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        if: inputs.runtime-artifact == ''
+        with:
+          repository: Pizza-Partition/pizza-bundle
+          ref: ${{ needs.sources.outputs.bundle }}
+          persist-credentials: false
+      - name: Build and test this runtime candidate
+        if: inputs.runtime-artifact == ''
+        run: scripts/ci.sh
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.runtime-artifact != ''
+        with:
+          name: ${{ inputs.runtime-artifact }}
+          path: dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-runtime
+          path: dist/
+          if-no-files-found: error
+  maintenance:
+    if: ${{ always() && needs.sources.result == 'success' && (needs.runtime.result == 'success' || needs.runtime.result == 'skipped') }}
+    needs: [sources, runtime]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: Pizza-Partition/pizza-maint
+          ref: ${{ needs.sources.outputs.maintenance }}
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: Pizza-Partition/Pizza
+          ref: ${{ needs.sources.outputs.host }}
+          path: host
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.maintenance-artifact == ''
+        with:
+          name: candidate-runtime
+          path: candidate-runtime
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: candidate-sources
+          path: candidate-inputs
+      - name: Install build tools and verify runtime content
+        if: inputs.maintenance-artifact == ''
+        env:
+          BUNDLE_COMMIT: ${{ needs.sources.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          node tools/install-zig.mjs
+          sudo apt-get update
+          sudo apt-get install -y binutils libarchive-tools systemd-ukify systemd-boot-efi qemu-system-x86
+          python3 scripts/fetch-efi-stub.py "$RUNNER_TEMP/linuxx64.efi.stub"
+          python3 host/test/release/candidate.py lock --root candidate-runtime --template config/bundle/release.json --commit "$BUNDLE_COMMIT"
+      - name: Build and test the exact maintenance candidate
+        if: inputs.maintenance-artifact == ''
+        run: |
+          set -euo pipefail
+          zig build test-unit test-session test-maint-session-image test-filesystems -Doptimize=safe -j4 --summary all
+          zig build bundle image uki protocol-package -Dcandidate-runtime="$PWD/candidate-runtime" -Duki-stub="$RUNNER_TEMP/linuxx64.efi.stub" -Doptimize=safe -j4 --summary all
+          zig build test-maintenance -Doptimize=safe -j4 -- --candidate-runtime --bundle zig-out/runtime/bundle --kernel-version 7.2.11-arch1-1 --timeout 180
+          zig build test-maintenance -Doptimize=safe -j4 -- --candidate-runtime --backend --bundle zig-out/runtime/bundle --kernel-version 7.2.11-arch1-1 --timeout 180
+          mkdir -p candidate-maintenance dist
+          cp -a zig-out/share/pizza/maint.efi* zig-out/share/pizza/maint.img* zig-out/share/pizza/vmlinuz zig-out/share/pizza/protocol candidate-maintenance/
+          python3 host/test/release/candidate.py create --root candidate-maintenance --sources candidate-inputs/sources.json --runtime candidate-runtime
+          python3 host/test/release/candidate.py verify --root candidate-maintenance --protocol host/vendor/pizza-protocol
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -czf dist/pizza-maint-x86_64.tar.gz -C candidate-maintenance .
+          cp zig-out/share/pizza/pizza-protocol-*.tar.gz dist/
+          (cd dist && sha256sum *.tar.gz > SHA256SUMS)
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.maintenance-artifact != ''
+        with:
+          name: ${{ inputs.maintenance-artifact }}
+          path: candidate-maintenance
+      - name: Bind the verified published image to this host candidate
+        if: inputs.maintenance-artifact != ''
+        run: |
+          set -euo pipefail
+          python3 host/test/release/candidate.py verify --root candidate-maintenance --protocol host/vendor/pizza-protocol
+          cp candidate-maintenance/candidate.json candidate-maintenance/upstream-candidate.json
+          python3 host/test/release/candidate.py create --root candidate-maintenance --sources candidate-inputs/sources.json --runtime candidate-maintenance
+          python3 host/test/release/candidate.py verify --root candidate-maintenance --protocol host/vendor/pizza-protocol
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: candidate-maintenance
+          path: candidate-maintenance/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: inputs.maintenance-artifact == ''
+        with:
+          name: candidate-maintenance-release
+          path: dist/
+          if-no-files-found: error
+  host:
+    if: ${{ always() && needs.sources.result == 'success' && needs.maintenance.result == 'success' }}
+    needs: [sources, maintenance]
+    uses: ./.github/workflows/ci.yml
+    with:
+      host-ref: ${{ needs.sources.outputs.host }}
+      maintenance-artifact: candidate-maintenance
+  reboot:
+    if: ${{ always() && needs.sources.result == 'success' && needs.maintenance.result == 'success' }}
+    needs: [sources, maintenance]
+    uses: ./.github/workflows/vm.yml
+    with:
+      host-ref: ${{ needs.sources.outputs.host }}
+      maintenance-artifact: candidate-maintenance
+      artifact-prefix: candidate-vm
+
+  acceptance:
+    if: always()
+    needs: [sources, runtime, maintenance, host, reboot]
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Reject skipped or incomplete required gates
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          PUBLISHED_MAINTENANCE: ${{ inputs.maintenance-artifact }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          for name in ['sources', 'maintenance', 'host', 'reboot']:
+              if results[name]['result'] != 'success': raise SystemExit(f"Required gate {name}: {results[name]['result']}")
+          expected = 'skipped' if os.environ['PUBLISHED_MAINTENANCE'] else 'success'
+          if results['runtime']['result'] != expected: raise SystemExit('Runtime input was not accepted')
+          PY

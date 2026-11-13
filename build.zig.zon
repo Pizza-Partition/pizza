@@ -25,5 +25,5 @@
             .hash = "win32-42.0.39-preview-mX5pFbz94wMrS0KOy_U9-B8H6DJqIvICfPIE6bRajtvv",
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "core", "build", "test", "ui/partition/app", "packaging", "README.md", ".zigversion" },
+    .paths = .{ "build.zig", "build.zig.zon", "core", "build", "test", "ui/partition/app", "packaging", "tools", "config", "vendor", "README.md", ".zigversion" },
 }

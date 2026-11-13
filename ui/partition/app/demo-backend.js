@@ -344,6 +344,9 @@ export function createDemoBackend(version) {
           },
         };
         return delay(structuredClone(run.session));
+      case '/api/discover':
+      case '/api/discover/elevated':
+        return delay({ version, execution: run ? status() : null });
       case '/api/status':
         return delay(status());
       case '/api/cancel':

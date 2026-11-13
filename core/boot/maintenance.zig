@@ -22,7 +22,7 @@ pub fn Maintenance(comptime Platform: type) type {
             receipt: ?wire.CompletionReceipt = null,
         };
         pub fn controller(self: *Self) boot.Controller {
-            return .{ .context = self, .prepare = prepare, .reboot = reboot, .complete = complete, .pending = pending, .cancel = cancel };
+            return .{ .context = self, .prepare = prepare, .reboot = reboot, .complete = complete, .pending = pending, .cancel = cancel, .discover = discover };
         }
         fn load(a: std.mem.Allocator, store: *Store) !?Pending {
             const bytes = try store.read(a, PENDING_KEY) orelse return null;
@@ -261,6 +261,15 @@ pub fn Maintenance(comptime Platform: type) type {
             defer esp.close(io);
             esp.releaseReservations() catch |err| std.log.warn("Maintenance staging cleanup: {t}", .{err});
         }
+        // Reconstruct the UI reference from protected state after a restart.
+        // Discovery never opens the ESP or changes firmware variables.
+        fn discover(_: *anyopaque, a: std.mem.Allocator, _: std.Io) !?wire.MaintenanceSession {
+            var store = try Store.openMaintenance(a);
+            defer store.deinit();
+            const value = try load(a, &store) orelse return null;
+            if (value.phase == .completed or value.phase == .cancelled) return null;
+            return project(value);
+        }
         fn pending(ctx: *anyopaque) !bool {
             const self: *Self = @ptrCast(@alignCast(ctx));
             var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
@@ -483,4 +492,23 @@ test "a cancellation that could not reach the ESP still completes, and the next 
     // The fixture has no maintenance image, so preparation stops after the cleanup.
     try std.testing.expectError(error.ExecutableUnavailable, MemoryPlatform.Subject.prepare(&subject, a, std.testing.io, MemoryPlatform.SNAPSHOT, MemoryPlatform.PLAN));
     try std.testing.expectEqual(1, MemoryPlatform.released);
+}
+
+test "prepared maintenance is discoverable without a browser reference and discovery is read only" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const value = try MemoryPlatform.prepared(a);
+    const before = MemoryPlatform.record.?;
+    const firmware_writes = MemoryPlatform.memory.writes;
+    var subject: MemoryPlatform.Subject = .{ .image_digest = @splat(2), .io = std.testing.io };
+    const found = (try MemoryPlatform.Subject.discover(&subject, a, std.testing.io)).?;
+    try std.testing.expectEqualStrings(value.request.id, found.id);
+    try std.testing.expectEqualStrings(value.request.plan_digest, found.plan_digest);
+    try std.testing.expectEqual(.prepared, found.phase);
+    try std.testing.expectEqualStrings(before, MemoryPlatform.record.?);
+    try std.testing.expectEqual(firmware_writes, MemoryPlatform.memory.writes);
+    try std.testing.expectEqual(0, MemoryPlatform.released);
+    _ = try MemoryPlatform.Subject.cancel(&subject, a, std.testing.io, found.id, found.plan_digest);
+    try std.testing.expectEqual(@as(?wire.MaintenanceSession, null), try MemoryPlatform.Subject.discover(&subject, a, std.testing.io));
 }

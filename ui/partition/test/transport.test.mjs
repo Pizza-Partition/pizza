@@ -26,6 +26,10 @@ test('native session advertises actual readiness and validation keeps administra
     const edit={snapshot_id:'snapshot',disk_identity:'disk',command:{kind:'add_left',partition_id:'free:0',filesystem:'ntfs'},review:true};
     await request('/api/plan',edit);
     assert.deepEqual(calls[6],['pizza_plan',{version:PROTOCOL_VERSION,...edit}]);
+    await request('/api/discover');
+    assert.deepEqual(calls[7], ['pizza_request', {version:PROTOCOL_VERSION,action:'discover'}]);
+    await request('/api/discover/elevated');
+    assert.deepEqual(calls[8], ['pizza_request', {version:PROTOCOL_VERSION,action:'discover',elevated:true}]);
   } finally {delete globalThis.webui;}
 });
 test('live requests require the WebUI bridge',async()=>{

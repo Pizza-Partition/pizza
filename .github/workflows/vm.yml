@@ -5,6 +5,16 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      host-ref:
+        type: string
+        default: ''
+      maintenance-artifact:
+        type: string
+        default: ''
+      artifact-prefix:
+        type: string
+        default: vm
 permissions:
   contents: read
 concurrency:
@@ -22,7 +32,19 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          repository: Pizza-Partition/Pizza
+          ref: ${{ inputs.host-ref || github.sha }}
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.maintenance-artifact != ''
+        with:
+          name: ${{ inputs.maintenance-artifact }}
+          path: candidate/maintenance
+      - name: Verify the candidate before provisioning any VM
+        if: inputs.maintenance-artifact != ''
+        run: |
+          python3 test/release/candidate.py verify --root candidate/maintenance --protocol vendor/pizza-protocol
+          echo "PIZZA_MAINTENANCE_SOURCE=$PWD/candidate/maintenance" >> "$GITHUB_ENV"
       - name: Require KVM and sufficient runner storage
         env:
           VM_SYSTEM: ${{ matrix.system }}
@@ -43,7 +65,7 @@ jobs:
           set -euo pipefail
           # libvirt daemonizes QEMU; PID 1 must reap those orphaned processes.
           docker run --detach --init --name pizza-ci-vm --device=/dev/kvm \
-            -e GH_TOKEN -e RUNNER_TEMP=/runner-temp -e PIZZA_CI_UID="$(id -u)" \
+            -e GH_TOKEN -e PIZZA_MAINTENANCE_SOURCE="${PIZZA_MAINTENANCE_SOURCE:+/work/candidate/maintenance}" -e RUNNER_TEMP=/runner-temp -e PIZZA_CI_UID="$(id -u)" \
             -v "$PWD:/work" -v "$RUNNER_TEMP:/runner-temp" -w /work \
             docker.io/library/archlinux:base@sha256:363129b67b2bc6c5a634f8fb4961a7e2eba213a2ec075d159127b1260290a722 \
             sleep infinity
@@ -132,7 +154,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: vm-${{ matrix.system }}-evidence
+          name: ${{ inputs.artifact-prefix || 'vm' }}-${{ matrix.system }}-evidence
           if-no-files-found: warn
           retention-days: 14
           include-hidden-files: true

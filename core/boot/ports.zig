@@ -14,6 +14,7 @@ pub const Controller = struct {
     reboot: *const fn (*anyopaque, std.mem.Allocator, std.Io, []const u8, []const u8) anyerror!proto.wire.MaintenanceSession,
     complete: *const fn (*anyopaque, std.mem.Allocator, std.Io, ?[]const u8) anyerror!proto.wire.CompletionReceipt,
     pending: *const fn (*anyopaque) anyerror!bool,
+    discover: ?*const fn (*anyopaque, std.mem.Allocator, std.Io) anyerror!?proto.wire.MaintenanceSession = null,
     cancel: ?*const fn (*anyopaque, std.mem.Allocator, std.Io, []const u8, ?[]const u8) anyerror!?proto.wire.MaintenanceSession = null,
 };
 pub const Store = struct {

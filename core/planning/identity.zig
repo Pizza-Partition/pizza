@@ -50,30 +50,9 @@ pub fn diskFromWwid(wwid: []const u8) ![32]u8 {
 }
 
 /// New UUIDs use the GPT on-disk byte order, matching the shared storage identity.
-pub fn guid(text: []const u8) ![16]u8 {
-    if (text.len != 32) return error.InvalidGuid;
-    for (text) |c| if (!((c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F'))) return error.InvalidGuid;
-    var bytes: [16]u8 = undefined;
-    var any: u8 = 0;
-    for (&bytes, 0..) |*b, i| {
-        b.* = std.fmt.parseInt(u8, text[2 * i ..][0..2], 16) catch return error.InvalidGuid;
-        any |= b.*;
-    }
-    if (any == 0) return error.InvalidGuid;
-    return bytes;
-}
-
-pub fn partition(a: std.mem.Allocator, disk: []const u8, uuid: []const u8) ![]const u8 {
-    const d = try proto.hexDigest(disk);
-    const u = try guid(uuid);
-    var hash = std.crypto.hash.sha2.Sha256.init(.{});
-    hash.update("pizza-partition-identity-v2");
-    hash.update(&d);
-    hash.update(&u);
-    var result: [32]u8 = undefined;
-    hash.final(&result);
-    return a.dupe(u8, &std.fmt.bytesToHex(result, .lower));
-}
+const common = proto.plan_validation;
+pub const guid = common.guid;
+pub const partition = common.partitionIdentity;
 
 /// Bind planning to geometry and identities, excluding changing usage counters.
 pub const fingerprint = @import("proto").inventory_fingerprint.fingerprint;

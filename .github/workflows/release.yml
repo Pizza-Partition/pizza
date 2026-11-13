@@ -6,12 +6,37 @@ on:
 permissions:
   contents: read
 jobs:
-  tests:
-    uses: ./.github/workflows/ci.yml
-  vm-tests:
-    uses: ./.github/workflows/vm.yml
+  dependency:
+    runs-on: ubuntu-26.04
+    outputs:
+      maintenance: ${{ steps.locked.outputs.maintenance }}
+      bundle: ${{ steps.locked.outputs.bundle }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: node tools/install-zig.mjs
+      - name: Verify the published maintenance dependency
+        id: locked
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 test/release/published-maintenance.py --destination "$RUNNER_TEMP/locked-maintenance"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: locked-maintenance
+          path: ${{ runner.temp }}/locked-maintenance/
+          if-no-files-found: error
+  candidate:
+    needs: dependency
+    uses: ./.github/workflows/candidate.yml
+    with:
+      host-ref: ${{ github.sha }}
+      maintenance-ref: ${{ needs.dependency.outputs.maintenance }}
+      bundle-ref: ${{ needs.dependency.outputs.bundle }}
+      maintenance-artifact: locked-maintenance
   release:
-    needs: [tests, vm-tests]
+    needs: candidate
     runs-on: ubuntu-26.04
     permissions:
       contents: write

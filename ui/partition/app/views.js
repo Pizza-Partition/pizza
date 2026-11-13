@@ -1,8 +1,8 @@
 // Pure markup: every function maps application state to the slots of one
 // screen. No DOM access, no requests, no state changes. Backend text is escaped.
 import { esc } from './dom.js';
-import { isCompressed, lane, planMarks, toneOf } from './disk-map.js';
-import { pizza } from './pizza.js';
+import { isCompressed, lane, planMarks } from './disk-map.js';
+import { pizza, RECIPE_COLORS } from './pizza.js';
 import {
   UNITS,
   capability,
@@ -82,7 +82,7 @@ export function disks(s) {
       'Read live from this system. Opening a disk changes nothing.',
     ),
     list: `${general}<div class="disk-list" aria-busy="${s.busy === 'refresh'}">${cards || '<p class="empty">No disks are visible. Connect one, then refresh.</p>'}</div>`,
-    foot: `${button('refresh', 'Refresh disks', { busy: s.busy === 'refresh' })}${s.session.maintenance_available ? button('maintenance-import', 'Import maintenance result', { busy: s.busy === 'import' }) : ''}<span class="foot-space"></span>`,
+    foot: `${button('refresh', 'Refresh disks', { busy: s.busy === 'refresh' })}${s.session.writes_enabled ? button('find-run', 'Find saved session', { busy: s.busy === 'find-run' }) : ''}${s.session.maintenance_available ? button('maintenance-import', 'Import maintenance result', { busy: s.busy === 'import' }) : ''}<span class="foot-space"></span>`,
   };
 }
 
@@ -122,14 +122,16 @@ function inspector(s) {
   ];
   if (p.used_bytes != null)
     facts.push([
-      'In use',
-      `${formatBytes(p.used_bytes)}${p.free_bytes == null ? '' : ` · ${formatBytes(p.free_bytes)} available`}`,
+      'Before changes',
+      `${formatBytes(p.used_bytes)} used${p.free_bytes == null ? '' : ` · ${formatBytes(p.free_bytes)} free`}`,
     ]);
 
   const resize_note = !s.editable
     ? 'Full partition-table access is required before editing.'
     : !right
-      ? 'Last region on the disk: its size follows the boundary on its left.'
+      ? p.free
+        ? 'Free space at the end of the disk.'
+        : capabilityNote(p, 'resize')
       : (capabilityNote(p, 'resize') ??
         (capability(right, 'resize') ? null : `${displayName(right)} cannot give or take space.`));
   const size_field = `<label class="field"><span class="field-name">Size</span>
@@ -137,7 +139,7 @@ function inspector(s) {
       <select id="size-unit" data-field="unit" aria-label="Size unit">${Object.keys(UNITS)
         .map((name) => `<option${name === s.unit ? ' selected' : ''}>${name}</option>`)
         .join('')}</select></span>
-      <span class="field-hint">${resize_note ?? `Space is exchanged with ${esc(displayName(right))} on the right.`}</span></label>`;
+      <span class="field-hint">${resize_note ?? (right ? `Space is exchanged with ${esc(displayName(right))} on the right.` : 'Shrink this partition to create free space at the end of the disk.')}</span></label>`;
 
   let fields = size_field;
   let actions = '';
@@ -206,8 +208,8 @@ function describeIntent(intent, nameOf) {
 function changeList(s, intents) {
   const nameOf = (id) =>
     displayName(
-      s.parts.find((p) => p.id === id) ??
-        s.baseline.find((p) => p.id === id) ?? { name: 'partition' },
+      s.baseline.find((p) => p.id === id) ??
+        s.parts.find((p) => p.id === id) ?? { name: 'partition' },
     );
   return intents
     .map((intent) => {
@@ -217,28 +219,46 @@ function changeList(s, intents) {
     .join('');
 }
 
-// The artwork is expensive and carries a fresh id on every call; reuse it
-// while the proportions are unchanged so its slot is not repainted.
+// Keep the SVG's paint resources alive while the planned proportions are unchanged.
 let pizza_key = '';
 let pizza_markup = '';
 function proportions(s) {
   const ids = baselineIds(s);
-  const key = s.parts.map((p) => `${p.id}:${p.length}`).join('|');
+  const key = JSON.stringify([
+    ids,
+    s.selected,
+    s.parts.map((p) => [p.id, String(p.length), displayName(p), !!p.free]),
+  ]);
   if (key !== pizza_key) {
     pizza_key = key;
+    const names = s.parts.map((p) => displayName(p)).join(', ');
     pizza_markup = pizza({
-      parts: s.parts.map((p, i) => ({
+      parts: s.parts.map((p) => ({
         id: p.id,
         name: displayName(p),
         size: Number(p.length) / 1073741824,
+        displaySize: formatBytes(p.length),
         recipe: p.free ? 7 : Math.max(0, ids.indexOf(p.id)) % 7,
-        color: toneOf(p.id, ids),
-        index: i,
       })),
-      label: 'Planned partitions, to scale',
+      selected: s.selected,
+      editable: true,
+      callouts: false,
+      label: `Planned partitions, to scale: ${names}`,
     });
   }
   return pizza_markup;
+}
+
+function pizzaLegend(s) {
+  const ids = baselineIds(s);
+  const total = s.parts.reduce((sum, p) => sum + p.length, 0n);
+  return `<div class="pizza-legend" aria-label="Partition slices">${s.parts
+    .map((p) => {
+      const recipe = p.free ? 7 : Math.max(0, ids.indexOf(p.id)) % 7;
+      const share = total ? Number((p.length * 1000n) / total) / 10 : 0;
+      return `<button type="button" data-action="select" data-select="${esc(p.id)}" aria-pressed="${p.id === s.selected}" title="${esc(displayName(p))} · ${esc(p.filesystem ?? (p.free ? 'Unallocated' : 'Unknown'))}${p.protected ? ' · Protected' : ''}" style="--recipe:${RECIPE_COLORS[recipe]}"><span class="recipe-dot" aria-hidden="true"></span><span class="slice-name">${esc(displayName(p))}<small>${esc(p.filesystem ?? (p.free ? 'Unallocated' : 'Unknown'))}${p.protected ? ' · Protected' : ''}</small></span><span class="slice-size">${formatBytes(p.length)}<small>${share < 0.1 ? '&lt;0.1' : share}%</small></span></button>`;
+    })
+    .join('')}</div>`;
 }
 
 function lanes(s, { interactive }) {
@@ -260,16 +280,38 @@ function lanes(s, { interactive }) {
   return `<div class="lanes">${now}${after}</div><p class="map-note">${[hint, compressed ? 'Order is exact; small regions are drawn wider than scale so they stay visible.' : ''].filter(Boolean).join(' ')}</p>`;
 }
 
+function partitionTable(s) {
+  const marks = planMarks(s.baseline, s.parts).after;
+  const names = { created: 'New', erased: 'Data erased', moved: 'Moved', resized: 'Resized' };
+  return `<div class="partition-table-head"><h2>Partitions</h2><span class="fine">Select a row to inspect or edit</span></div>
+    <table class="partition-table"><thead><tr><th scope="col">Name</th><th scope="col">Filesystem</th><th scope="col">Size</th><th scope="col">State</th></tr></thead>
+    <tbody>${s.parts
+      .map(
+        (p) => `<tr${p.id === s.selected ? ' class="is-selected"' : ''}>
+      <td><button type="button" data-action="select" data-select="${esc(p.id)}" aria-pressed="${p.id === s.selected}">${esc(displayName(p))}</button><span class="partition-path">${esc(p.path ?? (p.free ? 'Unallocated' : 'Planned partition'))}</span></td>
+      <td>${esc(p.filesystem ?? '—')}</td><td class="partition-size">${formatBytes(p.length)}</td>
+      <td><span class="partition-state${p.retain_data === false ? ' error' : ''}">${p.protected ? 'Protected' : p.encryption !== 'none' && !p.free ? 'View only' : (names[marks.get(p.id)] ?? (p.free ? 'Available' : 'Unchanged'))}</span></td></tr>`,
+      )
+      .join('')}</tbody></table>`;
+}
+
+function diskNavigation(s) {
+  return `<p class="eyebrow">Devices</p><nav class="disk-navigation" aria-label="Disks">${s.inventory.disks.map((d) => `<button type="button" data-action="open-disk" data-path="${esc(d.path)}"${d.path === s.disk.path ? ' aria-current="true"' : ''}${s.busy ? ' disabled' : ''}><strong>${esc(d.model || 'Unknown disk')}</strong><span class="path">${esc(d.path)}</span><span>${formatBytes(d.capacity)}</span></button>`).join('')}</nav><p class="navigation-note">Planning does not write to disk. Review the complete changes before authorizing execution.</p>`;
+}
+
 export function plan(s) {
   const d = s.disk;
   return {
-    head: `<div class="head-row"><div>${heading('STEP 2 · PLAN', 'Slice your disk.', `<span class="path">${esc(d.path)}</span> · ${esc(d.model || 'Unknown model')} · ${diskFacts(d)}`)}</div>
+    head: `<div class="head-row"><div>${heading('DISK WORKSPACE', esc(d.model || 'Plan your disk'), `<span class="path">${esc(d.path)}</span> · ${diskFacts(d)}`)}</div>
       <div class="head-tools">${button('undo', 'Undo', { disabled: !s.canUndo })}${button('reset', 'Start over', { disabled: !s.intents.length })}</div></div>${accessNotice(s)}`,
-    map: lanes(s, { interactive: true }),
+    navigation: diskNavigation(s),
+    pizza: `<figure class="partition-pizza"><figcaption><span class="eyebrow">YOUR DISK, SLICED</span><span>Planned partitions · to scale</span></figcaption><div class="pizza-stage">${proportions(s)}</div><p class="pizza-hint">Select a slice to inspect it. Small partitions are also available in the legend.</p></figure>`,
+    legend: pizzaLegend(s),
+    table: `<details class="layout-details"${s.layoutExpanded ? ' open' : ''}><summary>Exact layout, boundaries & partition table</summary><div class="layout-details-body">${lanes(s, { interactive: true })}${partitionTable(s)}</div></details>`,
     inspector: inspector(s),
-    changes: `<div class="changes-head"><h2>Pending changes</h2><span class="count">${s.intents.length}</span></div>
+    changes: `<div class="change-queue"><div class="changes-head"><h2>Pending changes</h2><span class="count">${s.intents.length}</span></div>
       ${s.intents.length ? `<ol class="changes">${changeList(s, s.intents)}</ol>` : `<p class="empty">${s.editable ? 'Nothing yet. The plan matches the disk, and nothing is written until you apply it.' : 'This disk is shown as read.'}</p>`}
-      <figure class="proportions" aria-hidden="true">${proportions(s)}<figcaption>Share of disk, to scale</figcaption></figure>`,
+      <p class="queue-note">Changes stay in this plan until you review and apply them.</p></div>`,
     foot: `${button('show-disks', '← Disks')}<span class="foot-space"></span>${button('review', 'Review plan →', { kind: 'primary', disabled: !s.editable || !s.intents.length, busy: s.busy === 'review' })}`,
   };
 }
@@ -332,7 +374,7 @@ export function review(s) {
         ${ack}
         ${button('export-plan', 'Save plan as JSON')}
       </aside>`,
-    foot: `${button('show-plan', '← Edit plan')}<span class="foot-note" role="status">${esc(blocker)}</span>${button('execute', offline_run ? 'Prepare maintenance restart' : 'Apply plan', { kind: 'primary', disabled: !!blocker, busy: s.busy === 'execute' })}`,
+    foot: `${button('show-plan', '← Edit plan', { disabled: s.busy === 'execute' })}<span class="foot-note" role="status">${esc(blocker)}</span>${button('execute', offline_run ? 'Prepare maintenance restart' : 'Apply plan', { kind: 'primary', disabled: !!blocker, busy: s.busy === 'execute' })}`,
   };
 }
 

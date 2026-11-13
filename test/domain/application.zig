@@ -87,7 +87,7 @@ const Maintenance = struct {
     armed: bool = false,
     digest: []const u8 = DISK_ID,
     fn port(self: *Maintenance) @import("../../core/boot/ports.zig").Controller {
-        return .{ .context = self, .prepare = prepare, .reboot = reboot, .complete = complete, .pending = pending, .cancel = cancel };
+        return .{ .context = self, .prepare = prepare, .reboot = reboot, .complete = complete, .pending = pending, .cancel = cancel, .discover = discover };
     }
     fn prepare(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io, _: wire.InventorySnapshot, plan: wire.ValidatedPlan) !wire.MaintenanceSession {
         const self: *Maintenance = @ptrCast(@alignCast(ctx));
@@ -110,6 +110,11 @@ const Maintenance = struct {
         if (id) |value| if (!std.mem.eql(u8, value, SESSION_ID)) return error.SessionApprovalMismatch;
         self.active = false;
         return .{ .version = proto.API_VERSION, .id = SESSION_ID, .plan_digest = self.digest, .program_digest = DISK_ID, .disk_identity = DISK_ID, .image_digest = DISK_ID, .outcome = .completed, .message = "fixture complete" };
+    }
+    fn discover(ctx: *anyopaque, _: std.mem.Allocator, _: std.Io) !?wire.MaintenanceSession {
+        const self: *Maintenance = @ptrCast(@alignCast(ctx));
+        if (!self.active) return null;
+        return .{ .version = proto.API_VERSION, .id = SESSION_ID, .plan_digest = self.digest, .phase = if (self.armed) .armed else .prepared, .message = "Recovered protected preparation" };
     }
     fn pending(ctx: *anyopaque) !bool {
         const self: *Maintenance = @ptrCast(@alignCast(ctx));
@@ -334,4 +339,29 @@ test "status refuses a durable record belonging to another session" {
     service.sessions.privileged = true;
     service.sessions.store.record = try std.json.Stringify.valueAlloc(a, wire.ExecutionSession{ .version = proto.API_VERSION, .id = SESSION_ID, .plan_digest = DISK_ID, .status = .succeeded, .completed = 0, .total = 0, .message = "fixture" }, .{ .emit_null_optional_fields = false });
     try std.testing.expectError(error.SessionIdentityMismatch, service.dispatch(a, try std.json.Stringify.valueAlloc(a, wire.PrivilegedRequest{ .version = proto.API_VERSION, .action = .status, .session_id = DISK_ID }, .{ .emit_null_optional_fields = false }), .privileged));
+}
+
+test "discovery reuses authorization and recovers protected preparation without a session ID" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var service = fixture();
+    const request = "{\"version\":" ++ CURRENT_VERSION ++ ",\"action\":\"discover\"}";
+    _ = try service.dispatch(a, request, .local);
+    try std.testing.expectEqual(0, service.sessions.prompts);
+    try std.testing.expectEqual(1, service.sessions.calls);
+    service.sessions.privileged = true;
+    var maintenance: Maintenance = .{ .active = true };
+    service.maintenance = maintenance.port();
+    const found = try std.json.parseFromSliceLeaky(wire.SessionDiscovery, a, try service.dispatch(a, request, .privileged), .{});
+    try std.testing.expectEqualStrings(SESSION_ID, found.maintenance.?.id);
+    try std.testing.expectEqualStrings(DISK_ID, found.maintenance.?.plan_digest);
+    try std.testing.expectEqual(.prepared, found.maintenance.?.phase);
+    try std.testing.expect(found.execution == null);
+    try std.testing.expectEqual(0, maintenance.calls);
+    try std.testing.expectEqual(0, service.disk.writes);
+    try std.testing.expectEqual(0, service.sessions.store.writes);
+    maintenance.active = false;
+    const empty = try std.json.parseFromSliceLeaky(wire.SessionDiscovery, a, try service.dispatch(a, request, .privileged), .{});
+    try std.testing.expect(empty.maintenance == null and empty.execution == null);
 }

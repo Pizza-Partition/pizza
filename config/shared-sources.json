@@ -1,0 +1,90 @@
+{
+  "source": "Pizza-Partition/pizza-maint",
+  "files": [
+    {
+      "upstream": "protocol/build.zig",
+      "target": "vendor/pizza-protocol/build.zig",
+      "sha256": "8f5e421a6d40d8b3df17e6f6dc4886af9bb444a420aa082e91b2d2fb2efba74d"
+    },
+    {
+      "upstream": "protocol/build.zig.zon",
+      "target": "vendor/pizza-protocol/build.zig.zon",
+      "sha256": "ae4964c91fc5c1807b4e2585319ae4b5860a60e2fe4b867df7c36049606a1632"
+    },
+    {
+      "upstream": "protocol/README.md",
+      "target": "vendor/pizza-protocol/README.md",
+      "sha256": "6397f1ec7046c0bb88752bbd4b43cec5f982677a9ceb65f9540c619e00cac0fc"
+    },
+    {
+      "upstream": "protocol/root.zig",
+      "target": "vendor/pizza-protocol/root.zig",
+      "sha256": "dc29ed2191671b49ae60f978fe800e7ed4e8ee1bd607c9ee0063ba6809ffdb3e"
+    },
+    {
+      "upstream": "protocol/contract.json",
+      "target": "vendor/pizza-protocol/contract.json",
+      "sha256": "8bdc1821f24e9c428e73b7101c3fe9fbe5b99328fc55a76166331b09312f1dd6"
+    },
+    {
+      "upstream": "protocol/generated.zig",
+      "target": "vendor/pizza-protocol/generated.zig",
+      "sha256": "38136b81399a109f1d086aad6c0156372636b33b2384138b5ada76d0d3aae8c4"
+    },
+    {
+      "upstream": "protocol/generated/contract.js",
+      "target": "vendor/pizza-protocol/generated/contract.js",
+      "sha256": "943cd044910f3bdc1800661206ec8084de476a61c75b51104090506ac142dd41"
+    },
+    {
+      "upstream": "protocol/generated/contract.d.ts",
+      "target": "vendor/pizza-protocol/generated/contract.d.ts",
+      "sha256": "2ea5dfbe802de603425cc88120d0b37457f8a92c0620b78a18ffd88196fa67e8"
+    },
+    {
+      "upstream": "protocol/uefi.zig",
+      "target": "vendor/pizza-protocol/uefi.zig",
+      "sha256": "7f47867d07acf3690797f7d7e67801671414d5fc96f85f354b26e61b15ffdc6a"
+    },
+    {
+      "upstream": "protocol/firmware_pin.zig",
+      "target": "vendor/pizza-protocol/firmware_pin.zig",
+      "sha256": "440b6d7c171adc1c86008bfd9e3889178fc78a8abb5c03ddb3be5fea242f84c0"
+    },
+    {
+      "upstream": "protocol/receipt_envelope.zig",
+      "target": "vendor/pizza-protocol/receipt_envelope.zig",
+      "sha256": "3de700c00a38ff9dc129b597ede9da94939cc0a39409ed91d1a9048c8570ebe9"
+    },
+    {
+      "upstream": "protocol/inventory_fingerprint.zig",
+      "target": "vendor/pizza-protocol/inventory_fingerprint.zig",
+      "sha256": "6f320627f039473af3892488e40e58695af2a8163c5f49a356e95456d8599753"
+    },
+    {
+      "upstream": "protocol/intent_normalization.zig",
+      "target": "vendor/pizza-protocol/intent_normalization.zig",
+      "sha256": "bec3edc8d96e8da91cc6baafdeda9d7ab3cbde7d448c982a82db75445bc64b30"
+    },
+    {
+      "upstream": "protocol/plan_validation.zig",
+      "target": "vendor/pizza-protocol/plan_validation.zig",
+      "sha256": "4a5a3c113d9972c0d65f53a7d9ab00c2f9f5b239b6be20dfacf963de7f9393e3"
+    },
+    {
+      "upstream": "protocol/plan_validation_cases.zig",
+      "target": "vendor/pizza-protocol/plan_validation_cases.zig",
+      "sha256": "e2c21bf9aa79905e29910523f9a86492c57ef2626969f9c7d917cbc6ff6551fc"
+    },
+    {
+      "upstream": "tools/install-zig.mjs",
+      "target": "tools/install-zig.mjs",
+      "sha256": "e166b85dc0a83d8fabc14cb8694d1455a99008cd4b8c9d5421da310d730c13db"
+    },
+    {
+      "upstream": "tools/install-zig.test.mjs",
+      "target": "tools/install-zig.test.mjs",
+      "sha256": "83fe2ea4f6be164e7064e9cb6056932cb765a8363727634a6e8d2a747f3c68a7"
+    }
+  ]
+}

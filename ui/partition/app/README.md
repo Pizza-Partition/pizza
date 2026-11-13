@@ -9,10 +9,13 @@ disks. It runs the same application code and never touches a disk.
 
 ## Design principles
 
-- **A disk is a line.** The map is one lane of the address space, left to right. Order and
-  adjacency are exact, because every partition operation depends on what sits next to what.
-  Widths are proportional with a minimum, and the map says so, so a 100 MiB boot partition on
-  a terabyte disk can still be seen, selected and dragged.
+- **The pizza is the main observation surface.** Slices show the planned byte proportions,
+  with stable recipes, selection highlighting and a clickable legend for tiny partitions.
+  Selecting a slice or using Enter/Space opens its inspector. Desktop layouts reserve the
+  centre for the pizza; narrow windows put it first and scroll the remaining controls.
+- **Exact boundaries stay available.** Expand the layout details to inspect the address
+  space, partition table and `Now`/`After` lanes. Order and adjacency are exact; tiny lane
+  regions have a visible minimum width. The panel retains its open state while editing.
 - **A plan is a diff.** `Now` (the disk as read) sits above `After` (the plan). A partition
   keeps its colour in both lanes; created, resized, moved, erased and deleted regions are
   badged, and the same changes are listed in words beside the inspector while editing.
@@ -25,8 +28,6 @@ disks. It runs the same application code and never touches a disk.
 - **Exact numbers.** Sizes are byte strings end to end (`BigInt` in the page). The inspector
   shows exact start, end and size; the size field takes MiB or GiB and is rounded down to a
   whole sector by the backend.
-- **The pizza is the proportion view.** The artwork shows each region's true share of the disk,
-  which the map deliberately distorts for small regions.
 
 ## Modules
 
@@ -68,3 +69,9 @@ navigation. Set `PIZZA_LAYOUT_CAPTURES` to a directory to save screenshots; `scr
 holds captures of the demo taken this way.
 
 Fonts and their OFL licenses are bundled under `assets/fonts`.
+
+Session recovery reads protected backend state through `discover`. An explicit “Find saved
+session” action may request administrator authorization; startup only reuses an existing
+helper. Browser storage is a shortcut, and an absent browser reference cannot hide a
+prepared maintenance session. Completed execution reports are opened automatically only
+when a saved local reference exists; manual discovery can reopen the latest durable report.

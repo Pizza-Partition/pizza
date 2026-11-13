@@ -135,19 +135,31 @@ NVIDIA/Wayland 环境下，程序为自身设置 `__NV_DISABLE_EXPLICIT_SYNC=1`�
 
 ## 协议与维护验收
 
-`pizza_maintenance` 固定维护系统 v0.5.1 的发布 URL 和 Zig 内容哈希，包内包含块对齐
-UKI、内核、initramfs 和独立 v4 协议（Zig/JS/TS 绑定与内容清单）。宿主始终消费同一发布
-包内的镜像和协议；协议版本不匹配直接拒绝，不转换旧草稿。
+`pizza_maintenance` 在 `build.zig.zon` 固定维护系统发布 URL 和 Zig 内容哈希，包内包含块对齐
+UKI、内核和 initramfs。纯协议及共享 planner 校验从 `vendor/pizza-protocol` 的内容锁定快照
+编译；它的唯一上游是 pizza-maint。协议版本不匹配直接拒绝，不转换旧草稿。
 `zig build` 和 `zig build check` 将前端绑定安装到 `zig-out/share/pizza/protocol`；
 仅运行前端测试或开发预览时，也可先执行 `zig build protocol-bindings`。
-`zig build maintenance-files` 将完整维护发布内容安装到 `zig-out/share/pizza/maintenance`，
-供隔离 VM 验收使用；常规安装只携带宿主需要的 `bin/maint.efi`。
+`zig build maintenance-files` 将完整维护发布内容安装到 `zig-out/share/pizza/maintenance`。
+共享协议、校验语料和 Zig 安装器更新后，在此运行
+`node tools/sync-shared.mjs --source ../pizza-maint`；`--check` 校验快照哈希，
+同时给出 `--source` 会检查两个仓库是否一致。普通构建不需要相邻仓库。
 容量和偏移使用十进制字符串传输、BigInt 编辑，显示最多两位小数。
 
 维护仓库提供 `zig build protocol-package` 导出协议，以及以下 Zig 验收入口：
 `check`、`check-proto`、`test-session`、`test-maint-session-image`、
 `test-storage-unit`、`test-filesystems`、`test-storage-crash`。
 跨进程维护测试只使用临时普通镜像文件，覆盖恢复、撤销、接受后关闭撤销和清理。
-完整 UEFI/OVMF 重启验收仍须另行完成，不能以这些镜像测试替代。
+发布流程通过 `.github/workflows/candidate.yml` 固定三个仓库的完整提交 SHA，先构建并测试
+runtime，再构建维护镜像，最后让 Linux/Windows 宿主和三组 VM 验收消费同一镜像。
+候选门禁覆盖 Linux 512/4096 扇区、Windows、五类接受/撤销/断电场景和幂等回执导入，
+逐个核对回执的镜像摘要；缺少 KVM、场景或回执都会失败。发布作业只取门禁中的构建产物。
+也可手动运行候选工作流，指定三个 source ref；它会先解析为 SHA，再开始构建。
+本地调试可通过 `-Dmaintenance-source=/absolute/candidate` 或
+`PIZZA_MAINTENANCE_SOURCE` 选择明确的候选维护目录。CI 的候选目录带有 `candidate.json`，
+由 `python3 test/release/candidate.py verify --root DIR --protocol vendor/pizza-protocol` 校验。
+维护构建的 `-Dcandidate-runtime=DIR` 仅用于本地候选构建输入；下载发布产物的默认路径继续
+校验发布者签名、TUF 信任和内容摘要。三仓库需要先同步共享快照，再启用发布门禁。
+镜像单测不代替完整 UEFI/OVMF 验收；云端矩阵是否通过，以对应 workflow run 的证据为准。
 
 历史设计记录保留在 docs；其中旧协议及旧切换方式不代表现行接口。

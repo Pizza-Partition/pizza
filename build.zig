@@ -12,7 +12,9 @@ pub fn build(b: *std.Build) !void {
     b.step("dev", "Rebuild on source changes with incremental compilation (build arguments after --)").dependOn(&dev.step);
     const clap = b.dependency("clap", .{ .target = target, .optimize = optimize }).module("clap");
     const maintenance_package = b.dependency("pizza_maintenance", .{});
-    const protocol_root = maintenance_package.path("protocol");
+    const maintenance_source = b.option([]const u8, "maintenance-source", "Local candidate maintenance release directory for cross-repository acceptance") orelse b.graph.environ_map.get("PIZZA_MAINTENANCE_SOURCE");
+    const maintenance_root: std.Build.LazyPath = if (maintenance_source) |value| (if (value.len != 0) .{ .cwd_relative = value } else maintenance_package.path("")) else maintenance_package.path("");
+    const protocol_root: std.Build.LazyPath = b.path("vendor/pizza-protocol");
     const proto = b.createModule(.{ .root_source_file = protocol_root.path(b, "root.zig"), .target = target, .optimize = optimize });
     const protocol_bindings = b.addInstallDirectory(.{ .source_dir = protocol_root.path(b, "generated"), .install_dir = .prefix, .install_subdir = "share/pizza/protocol" });
     b.getInstallStep().dependOn(&protocol_bindings.step);
@@ -25,16 +27,16 @@ pub fn build(b: *std.Build) !void {
     const module = b.createModule(.{ .root_source_file = b.path("core/main.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "proto", .module = proto }} });
     module.addImport("clap", clap);
     if (webui) |dep| module.addImport("webui", dep.module("webui"));
-    const image_path = maintenance_package.path("maint.efi");
+    const image_path = maintenance_root.path(b, "maint.efi");
     b.dependOnFileContents(image_path);
-    const image_file = try maintenance_package.builder.root.join(b.allocator, "maint.efi");
+    const image_file = try sourcePath(b, image_path);
     const image_bytes = try image_file.root_dir.handle.readFileAlloc(b.graph.io, image_file.sub_path, b.allocator, .limited(512 * 1024 * 1024));
     if (image_bytes.len == 0 or image_bytes.len % 4096 != 0) return error.MaintenanceImageMustBeBlockAligned;
     var image_digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(image_bytes, &image_digest, .{});
     const install_image = b.addInstallFileWithDir(image_path, .bin, "maint.efi");
     b.getInstallStep().dependOn(&install_image.step);
-    const maintenance_files = b.addInstallDirectory(.{ .source_dir = maintenance_package.path(""), .install_dir = .prefix, .install_subdir = "share/pizza/maintenance" });
+    const maintenance_files = b.addInstallDirectory(.{ .source_dir = maintenance_root, .install_dir = .prefix, .install_subdir = "share/pizza/maintenance" });
     const maintenance_step = b.step("maintenance-files", "Install the pinned maintenance release for VM acceptance");
     maintenance_step.dependOn(&maintenance_files.step);
     const configuration = b.addOptions();
@@ -158,11 +160,7 @@ fn configureCompile(compile: *std.Build.Step.Compile, windows_lld: bool) void {
 
 fn protocolEvidence(b: *std.Build, root: std.Build.LazyPath) !*std.Build.Step.Options {
     const options = b.addOptions();
-    const base: std.Build.Cache.Path = switch (root) {
-        .dependency => |d| try d.dependency.builder.root.join(b.allocator, d.sub_path),
-        .cwd_relative => |path| .initCwd(path),
-        else => return error.UnsupportedProtocolSource,
-    };
+    const base = try sourcePath(b, root);
     const manifest_file = try base.join(b.allocator, "manifest.json");
     const manifest_path = root.path(b, "manifest.json");
     b.dependOnFileContents(manifest_path);
@@ -186,4 +184,13 @@ fn protocolEvidence(b: *std.Build, root: std.Build.LazyPath) !*std.Build.Step.Op
     options.addOption([]const []const u8, "names", names);
     options.addOption([]const []const u8, "hashes", hashes);
     return options;
+}
+
+fn sourcePath(b: *std.Build, path: std.Build.LazyPath) !std.Build.Cache.Path {
+    return switch (path) {
+        .dependency => |d| try d.dependency.builder.root.join(b.allocator, d.sub_path),
+        .src_path => |src| try src.owner.root.join(b.allocator, src.sub_path),
+        .cwd_relative => |value| .initCwd(value),
+        else => error.UnsupportedProtocolSource,
+    };
 }

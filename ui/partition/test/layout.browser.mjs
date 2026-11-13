@@ -1,6 +1,6 @@
 // Drives the real frontend in Chromium against fixtures only: the demo backend
 // and a stubbed WebUI bridge. It never reaches the native backend or a disk.
-// PIZZA_PLAYWRIGHT_MODULE may point to an existing playwright-core installation,
+// PIZZA_PLAYWRIGHT_MODULE may point to an alternate Playwright installation,
 // PIZZA_CHROMIUM_EXECUTABLE to a Chromium binary, PIZZA_LAYOUT_CAPTURES to a
 // directory that receives screenshots.
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 const contract = root + 'zig-out/share/pizza/protocol/contract.js';
 const { CONTRACT } = await import(contract);
 const VERSION = CONTRACT['x-pizza'].version;
-const { chromium } = await import(process.env.PIZZA_PLAYWRIGHT_MODULE || 'playwright-core');
+const { chromium } = await import(process.env.PIZZA_PLAYWRIGHT_MODULE || 'playwright');
 const captures = process.env.PIZZA_LAYOUT_CAPTURES;
 if (captures) await fs.mkdir(captures, { recursive: true });
 
@@ -84,9 +84,13 @@ async function fits(page, name) {
     const m = await page.evaluate(() => {
       const app = document.querySelector('#app');
       const foot = document.querySelector('.slot-foot');
+      const pizza = document.querySelector('.screen-plan .pizza-stage svg');
       return {
         doc: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
         app: app.scrollWidth - app.clientWidth,
+        pizza: pizza
+          ? Math.min(pizza.getBoundingClientRect().width, pizza.getBoundingClientRect().height)
+          : null,
         buttons: [...(foot?.querySelectorAll('.btn') ?? [])].map((b) =>
           b.getBoundingClientRect().toJSON(),
         ),
@@ -95,6 +99,10 @@ async function fits(page, name) {
     const at = `${name} ${width}×${height}`;
     assert.ok(m.doc[0] <= width && m.app <= 0, `${at}: horizontal overflow ${JSON.stringify(m)}`);
     assert.ok(m.doc[1] <= height, `${at}: the document scrolls instead of the app region`);
+    if (m.pizza !== null)
+      assert.ok(m.pizza >= 240, `${at}: the pizza diagram is too small (${m.pizza}px)`);
+    if (name === 'pizza' && width >= 1100 && height >= 700)
+      assert.ok(m.pizza >= 340, `${at}: pizza must remain the primary observation surface`);
     for (const b of m.buttons)
       assert.ok(
         b.left >= 0 && b.right <= width + 0.5 && b.bottom <= height + 0.5,
@@ -105,6 +113,10 @@ async function fits(page, name) {
     checks++;
   }
   await page.setViewportSize({ width: 1160, height: 740 });
+}
+async function openDetails(page) {
+  if ((await page.locator('.layout-details').getAttribute('open')) === null)
+    await page.locator('.layout-details summary').click();
 }
 const count = (page) => page.locator('.slot-changes .count').innerText();
 const segment = (page, name) => page.locator('.lane-live .seg', { hasText: name }).first();
@@ -117,6 +129,12 @@ try {
   await fits(page, 'choose');
 
   await page.locator('.disk').first().click();
+  await page.waitForSelector('.screen-plan .pizza-stage svg');
+  await page.locator('.pizza-slice[aria-label^="EFI,"]').press('Enter');
+  await page.locator('.pizza-slice[aria-label^="Arch,"] > path:first-child').click();
+  assert.equal(await page.locator('.slot-inspector h2').innerText(), 'Arch');
+  await fits(page, 'pizza');
+  await openDetails(page);
   await page.waitForSelector('.screen-plan .lane-live');
   assert.equal(await count(page), '0');
   assert.ok(await page.locator('[data-action="review"]').isDisabled(), 'nothing to review yet');
@@ -204,6 +222,7 @@ try {
   );
   await page.locator('[data-action="show-plan"]').click();
   await page.waitForSelector('.screen-plan');
+  await openDetails(page);
   assert.match(await segment(page, 'Data').innerText(), /erase/i, 'returning to the plan keeps it');
   await page.locator('[data-action="review"]').click();
   await page.locator('.ack input').check();
@@ -216,6 +235,11 @@ try {
   await page.locator('[data-action="finish-run"]').click();
   await page.waitForSelector('.screen-disks');
   assert.match(await page.locator('.disk').first().innerText(), /xfs|Data/);
+  // Demo storage is absent. Recovery discovers the backend's durable session
+  // without an ID, approved digest, or another execution request.
+  await page.locator('[data-action="find-run"]').click();
+  await page.waitForSelector('.screen-run .run-card.is-done');
+  assert.equal(await page.locator('h1').innerText(), 'All set.');
   await page.context().close();
 
   // 2. Stubbed bridge: authorization, refusal copy, and a lost execution.
@@ -259,6 +283,7 @@ try {
         fixture.calls.push({ binding, ...req });
         const reply = (value) => JSON.stringify({ version, ...value });
         if (binding === 'pizza_session') return reply({ writes_enabled: true, formats: ['ext4'] });
+        if (req.action === 'discover') return reply({});
         if (req.action === 'inventory') {
           const d = structuredClone(disk);
           if (req.elevated) fixture.authorized = true;
@@ -323,6 +348,7 @@ try {
     'view-only disks have no handles',
   );
   await live.locator('[data-action="authorize"]').click();
+  await openDetails(live);
   await live.waitForSelector('.lane-row-after');
   assert.equal(await live.locator('.notice-access').count(), 0);
   await live.locator('[data-action="delete"]').click();
@@ -351,6 +377,63 @@ try {
     'the approval is remembered before the reply',
   );
   await live.context().close();
+
+  // A new browser profile has no local reference. The protected backend finds
+  // the prepared session after the user explicitly authorizes discovery.
+  const recovered = await open('/', (version) => {
+    const hex = (digit) => digit.repeat(64);
+    globalThis.fixture = { calls: [] };
+    globalThis.webui = {
+      isConnected: () => true,
+      async call(binding, payload) {
+        const req = payload ? JSON.parse(payload) : {};
+        fixture.calls.push({ binding, ...req });
+        const reply = (value) => JSON.stringify({ version, ...value });
+        if (binding === 'pizza_session')
+          return reply({ writes_enabled: true, maintenance_available: true, formats: [] });
+        if (req.action === 'inventory')
+          return reply({ snapshot_id: hex('a'), platform: 'linux', disks: [], diagnostics: [] });
+        if (req.action === 'discover' && !req.elevated)
+          return JSON.stringify({ error: 'PrivilegedServiceUnavailable' });
+        if (req.action === 'discover')
+          return reply({
+            maintenance: {
+              version,
+              id: hex('b'),
+              plan_digest: hex('c'),
+              phase: 'prepared',
+              message: 'Recovered protected preparation',
+            },
+          });
+        throw Error(`Unexpected recovery request: ${req.action}`);
+      },
+    };
+  });
+  await recovered.waitForSelector('.screen-disks');
+  await recovered.locator('[data-action="find-run"]').click();
+  await recovered.waitForSelector('.screen-maintenance');
+  assert.equal(await recovered.locator('h1').innerText(), 'Maintenance is prepared.');
+  assert.ok(await recovered.locator('[data-action="maintenance-reboot"]').isEnabled());
+  assert.ok(await recovered.locator('[data-action="maintenance-cancel"]').isEnabled());
+  const restored = await recovered.evaluate(
+    (v) => ({
+      reference: JSON.parse(localStorage.getItem(`pizza.maintenance.v${v}`)),
+      calls: fixture.calls,
+    }),
+    VERSION,
+  );
+  assert.deepEqual(restored.reference, {
+    id: 'b'.repeat(64),
+    digest: 'c'.repeat(64),
+    phase: 'prepared',
+  });
+  assert.equal(restored.calls.filter((c) => c.elevated).length, 1);
+  assert.equal(
+    restored.calls.filter((c) => ['prepare', 'execute', 'reboot', 'cancel'].includes(c.action))
+      .length,
+    0,
+  );
+  await recovered.context().close();
 
   assert.deepEqual(errors, []);
   console.log(`layout.browser: ${checks} window checks passed`);

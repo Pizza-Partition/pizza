@@ -12,6 +12,7 @@ const PALETTES = [
   ['#dba36a', '#eebc86', '#d99865', '#b15b3e', ['pepperoni', 'onion', 'pepper']],
   ['#dfc087', '#fff0c1', '#e6d5a0', '#c4af7e', ['cheese', 'bluecheese', 'cheese']],
 ];
+export const RECIPE_COLORS = PALETTES.map((palette) => palette[2]);
 const point = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
 const sector = (r, start, end) => {
   const [x, y] = point(r, start),
@@ -136,6 +137,7 @@ export function pizza({
   parts = null,
   selected = null,
   editable = false,
+  callouts = true,
   mini = false,
   label = 'Eight recipes, one whole pizza',
   className: class_name = '',
@@ -196,20 +198,18 @@ export function pizza({
     }
     const active = editable && selected === p.id;
     const shift = active ? 9 : 2;
-    const opacity = editable && !active ? 0.32 : 1;
+    const opacity = editable && !active ? 0.82 : 1;
     const attrs = editable
-      ? `role="button" tabindex="0" aria-label="${escape(p.name)}, ${escape(p.displaySize ?? `${p.size} GB`)}${active ? ', selected' : ''}" aria-pressed="${active}" data-part="${p.id}" data-angle="${mid}"`
+      ? `role="button" tabindex="0" aria-label="${escape(p.name)}, ${escape(p.displaySize ?? `${p.size} GB`)}${active ? ', selected' : ''}" aria-pressed="${active}" data-action="select" data-select="${escape(p.id)}" data-part="${escape(p.id)}" data-angle="${mid}"`
       : '';
     slices.push(
       `<g class="pizza-slice ${editable ? 'interactive' : ''}" ${attrs} style="opacity:${opacity};transform:translate(${Math.cos(mid) * shift}px,${Math.sin(mid) * shift}px)"><path d="${crust}" fill="${pal[0]}" stroke="#c59a62" stroke-width=".65" stroke-linejoin="round"/><path d="${sauce}" fill="${pal[3]}" opacity=".8"/><path d="${cheese}" fill="url(#${id}-base-${i})"/><g clip-path="url(#${id}-crust-clip-${i})"><path d="${arc(193, start + edge_inset, end - edge_inset)}" stroke="#f7dca7" stroke-width="6" stroke-linecap="round" fill="none" opacity=".6"/>${crust_spots}</g><g clip-path="url(#${id}-clip-${i})">${texture}${topping}</g><path d="${crust}" class="slice-outline"/></g>`,
     );
     angle += amount;
   });
-  const callouts = editable ? partitionLabels(pieces, total, selected) : null;
-  const view_box = callouts
-    ? `-380 ${-callouts.height / 2} 760 ${callouts.height}`
-    : '-232 -232 464 464';
-  return `<svg class="pizza-svg ${class_name}" viewBox="${view_box}" role="${editable ? 'group' : 'img'}" aria-label="${label}"><defs>${ingredients(id)}${defs.join('')}</defs><circle r="218" fill="none" stroke="#ded5c0" stroke-width=".7"/><circle r="212" fill="#e9dfca" opacity=".25"/>${slices.join('')}${callouts?.markup ?? ''}</svg>`;
+  const labels = editable && callouts ? partitionLabels(pieces, total, selected) : null;
+  const view_box = labels ? `-380 ${-labels.height / 2} 760 ${labels.height}` : '-232 -232 464 464';
+  return `<svg class="pizza-svg ${class_name}" viewBox="${view_box}" role="${editable ? 'group' : 'img'}" aria-label="${escape(label)}"><defs>${ingredients(id)}${defs.join('')}</defs><circle r="218" fill="none" stroke="#ded5c0" stroke-width=".7"/><circle r="212" fill="#e9dfca" opacity=".25"/>${slices.join('')}${labels?.markup ?? ''}</svg>`;
 }
 
 // Keep the SVG and its paint resources alive so interrupted transitions can
@@ -219,7 +219,7 @@ export function updatePizzaSelection(root, selected) {
     const active = slice.dataset.part === selected;
     const shift = active ? 9 : 2;
     const angle = Number(slice.dataset.angle);
-    slice.style.opacity = active ? '1' : '.32';
+    slice.style.opacity = active ? '1' : '.82';
     slice.style.transform = `translate(${Math.cos(angle) * shift}px,${Math.sin(angle) * shift}px)`;
     slice.setAttribute('aria-pressed', String(active));
     const label = slice.getAttribute('aria-label').replace(/, selected$/, '');

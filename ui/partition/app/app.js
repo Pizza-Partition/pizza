@@ -1,7 +1,7 @@
 // The controller: owns application state, talks to the backend, and decides
 // which screen is shown. Markup lives in views.js; editing rules live in Zig.
 import { createPainter, download } from './dom.js';
-import { ExecutionMonitor } from './execution-client.js';
+import { ExecutionMonitor, executionPending } from './execution-client.js';
 import {
   GIB,
   MIB,
@@ -49,6 +49,7 @@ const EXPLANATIONS = {
   PlanTooLarge: 'The plan has too many partitions.',
   PlanApprovalChanged: 'The disk no longer matches the reviewed plan. Review it again.',
   PlanNotExecutable: 'The plan did not pass the final check. Review it again.',
+  SessionNotFound: 'No saved execution or maintenance session was found.',
   WindowsResizeOutsideSupportedRange:
     'Windows cannot resize this volume to that size. Refresh the disks and choose a supported size.',
   InsufficientEspSpace:
@@ -56,6 +57,14 @@ const EXPLANATIONS = {
   EspSpaceUnavailable: 'Free space on the EFI system partition could not be checked.',
   AmbiguousDiskIdentity:
     'Multiple disks report the same identity. Resolve the duplicate disk identity and refresh.',
+  IpcDescriptorLimit: 'The system is out of file handles. Close other applications and reconnect.',
+  IpcTimeout: 'The administrator service timed out. Reconnect to check the saved result.',
+  IpcCommunicationFailed:
+    'Communication with the administrator service failed. Reconnect to check the saved result.',
+  InvalidSessionReference:
+    'The saved administrator connection is damaged. Its session reference could not be validated.',
+  UntrustedSessionPeer: 'The administrator service identity could not be verified.',
+  IpcAuthenticationFailed: 'The administrator connection could not be authenticated.',
   UnsafeSessionRecord: 'The saved session record failed its security checks.',
   UnsafeSessionFile: 'The saved session record failed its security checks.',
   SessionRecordUnavailable: 'The saved session could not be opened. Check administrator access.',
@@ -98,6 +107,7 @@ export async function startApp({ request, demo, storage, version }) {
   };
   let client = null;
   let inventory_revision = 0;
+  let navigation_revision = 0;
   let drag = null;
   let toast_timer;
 
@@ -108,6 +118,8 @@ export async function startApp({ request, demo, storage, version }) {
     toast_timer = setTimeout(() => toast.classList.remove('visible'), 6000);
   }
   function render() {
+    const details = document.querySelector('.screen-plan .layout-details');
+    if (details) s.layoutExpanded = details.open;
     painter.paint(s.screen, views[s.screen](s));
     const step = STEP_OF[s.screen] ?? 0;
     for (const item of document.querySelectorAll('[data-step]')) {
@@ -154,7 +166,11 @@ export async function startApp({ request, demo, storage, version }) {
       get: () => value,
       set(next) {
         value = next;
-        if (!storage) return;
+        if (!storage) {
+          if (next && !demo)
+            note('This window cannot remember the session. Keep it open until the work finishes.');
+          return;
+        }
         try {
           if (next) storage.setItem(name, JSON.stringify(next));
           else storage.removeItem(name);
@@ -191,6 +207,7 @@ export async function startApp({ request, demo, storage, version }) {
     !!(d?.identity && d.partition_table === 'gpt' && !d.read_only && d.usable_length != null);
 
   async function boot() {
+    navigation_revision++;
     monitor.stop();
     client = null;
     show('loading');
@@ -204,7 +221,18 @@ export async function startApp({ request, demo, storage, version }) {
       if (pending) showMaintenance({ id: pending.id, phase: pending.phase });
       else if (last_run.get())
         await monitor.resume(last_run.get().id, false, last_run.get().digest);
-      else show('disks');
+      else {
+        show('disks');
+        try {
+          adoptDiscovery(await request('/api/discover'), false);
+        } catch (error) {
+          // A fresh desktop launch may not have an authorized helper yet.
+          if (error.code !== 'PrivilegedServiceUnavailable') {
+            console.error('Pizza could not discover saved sessions:', error);
+            note(explain(error));
+          }
+        }
+      }
     } catch (error) {
       console.error('Pizza could not read the disk inventory:', error);
       s.error = explain(error);
@@ -229,12 +257,14 @@ export async function startApp({ request, demo, storage, version }) {
       result.selected ?? (s.parts.some((p) => p.id === s.selected) ? s.selected : s.parts[0]?.id);
   }
   async function openDisk(path) {
+    const revision = ++navigation_revision;
     const disk = s.inventory.disks.find((d) => d.path === path);
     if (!disk) throw Error('That disk is no longer connected. Refresh the disk list.');
     const opened = canPlan(disk)
       ? new PlanClient((data) => request('/api/plan', data), s.inventory, disk, s.elevated)
       : null;
     const first = opened ? await opened.edit() : null;
+    if (revision !== navigation_revision) return;
     client = opened;
     Object.assign(s, {
       disk,
@@ -336,6 +366,17 @@ export async function startApp({ request, demo, storage, version }) {
     }
   }
 
+  function adoptDiscovery(found, includeFinished = true) {
+    if (found.maintenance) {
+      const value = found.maintenance;
+      last_maintenance.set({ id: value.id, digest: value.plan_digest, phase: value.phase });
+      showMaintenance(value);
+    } else if (found.execution && (includeFinished || executionPending(found.execution)))
+      monitor.watch(found.execution);
+    else return false;
+    return true;
+  }
+
   function showMaintenance(value) {
     monitor.stop();
     s.maintenance = value;
@@ -348,10 +389,13 @@ export async function startApp({ request, demo, storage, version }) {
     refresh: () => busy('refresh', refresh),
     'open-disk': (el) => busy('open', () => openDisk(el.dataset.path)),
     'show-disks'() {
+      navigation_revision++;
       client = null;
       show('disks');
     },
-    'show-plan': () => show('plan'),
+    'show-plan': () => {
+      if (s.busy !== 'execute') show('plan');
+    },
     authorize,
     select(el) {
       if (!s.parts.some((p) => p.id === el.dataset.select)) return;
@@ -375,6 +419,11 @@ export async function startApp({ request, demo, storage, version }) {
     'export-plan': () => download(`pizza-plan-v${version}.json`, s.reviewed.draft),
     execute,
     'cancel-run': () => monitor.cancel(),
+    'find-run': () =>
+      busy('find-run', async () => {
+        const found = await request('/api/discover/elevated');
+        if (!adoptDiscovery(found)) note(EXPLANATIONS.SessionNotFound);
+      }),
     'save-report': () => download(`pizza-report-${s.run.id}.json`, s.run),
     'finish-run'() {
       monitor.stop();
@@ -464,10 +513,17 @@ export async function startApp({ request, demo, storage, version }) {
     if (el.tagName === 'A') e.preventDefault();
     Promise.resolve(actions[el.dataset.action]?.(el)).catch((error) => note(explain(error)));
   });
-  document.addEventListener('change', (e) => {
-    const handler = fields[e.target.dataset?.field];
-    if (handler) Promise.resolve(handler(e.target)).catch((error) => note(explain(error)));
-  });
+  const committed_fields = new WeakMap();
+  function commitField(el) {
+    const handler = fields[el.dataset?.field];
+    if (!handler) return;
+    const value = el.type === 'checkbox' ? el.checked : el.value;
+    // Enter and the later blur can describe the same edit. Submit it once.
+    if (committed_fields.get(el) === value) return;
+    committed_fields.set(el, value);
+    Promise.resolve(handler(el)).catch((error) => note(explain(error)));
+  }
+  document.addEventListener('change', (e) => commitField(e.target));
 
   // Boundary handles. A drag only previews; the backend commits and checks it.
   const boundary = (e) => e.target.closest?.('[data-boundary]');
@@ -516,6 +572,20 @@ export async function startApp({ request, demo, storage, version }) {
   document.addEventListener('pointerup', () => endDrag(true));
   document.addEventListener('pointercancel', () => endDrag(false));
   document.addEventListener('keydown', (e) => {
+    const slice = e.target.closest?.('.pizza-slice[data-select]');
+    if (slice && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      actions.select(slice);
+      return;
+    }
+    if (
+      e.key === 'Enter' &&
+      e.target.matches?.('input[data-field="size"], input[data-field="label"]')
+    ) {
+      e.preventDefault();
+      commitField(e.target);
+      return;
+    }
     const grip = boundary(e);
     if (!grip || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
     e.preventDefault();

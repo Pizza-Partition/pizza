@@ -1,5 +1,16 @@
 name: pizza-host
-on: [push, pull_request, workflow_dispatch, workflow_call]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      host-ref:
+        type: string
+        default: ''
+      maintenance-artifact:
+        type: string
+        default: ''
 permissions:
   contents: read
 env:
@@ -10,32 +21,31 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: Pizza-Partition/Pizza
+          ref: ${{ inputs.host-ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.maintenance-artifact != ''
+        with:
+          name: ${{ inputs.maintenance-artifact }}
+          path: candidate/maintenance
+      - name: Bind this build to the tested maintenance candidate
+        if: inputs.maintenance-artifact != ''
+        shell: bash
+        run: |
+          python test/release/candidate.py verify --root candidate/maintenance --protocol vendor/pizza-protocol
+          python -c 'from pathlib import Path; print("PIZZA_MAINTENANCE_SOURCE=" + str(Path("candidate/maintenance").resolve()))' >> "$GITHUB_ENV"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       - name: Install locked Zig 0.17.0
+        run: node tools/install-zig.mjs
+      - name: Verify shared sources and toolchain installation rules
         run: |
-          node --input-type=module <<'JS'
-          import fs from 'node:fs';
-          import path from 'node:path';
-          import { createHash } from 'node:crypto';
-          import { execFileSync } from 'node:child_process';
-          const lock = JSON.parse(fs.readFileSync('config/toolchain.json', 'utf8'));
-          const source = lock['x86_64-linux'];
-          const response = await fetch(source.url);
-          if (!response.ok) throw new Error(`Zig download: ${response.status}`);
-          const bytes = Buffer.from(await response.arrayBuffer());
-          if (createHash('sha256').update(bytes).digest('hex') !== source.sha256)
-            throw new Error('Zig archive SHA-256 mismatch');
-          const directory = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, 'pizza-zig-'));
-          const archive = path.join(directory, 'zig.tar.xz');
-          fs.writeFileSync(archive, bytes);
-          execFileSync('tar', ['-xJf', archive, '-C', directory]);
-          const installed = path.join(directory, `zig-x86_64-linux-${lock.version}`);
-          if (execFileSync(path.join(installed, 'zig'), ['version'], { encoding: 'utf8' }).trim() !== lock.version)
-            throw new Error('Zig version mismatch');
-          fs.appendFileSync(process.env.GITHUB_PATH, `${installed}\n`);
-          JS
+          node tools/sync-shared.mjs --check
+          node --test tools/install-zig.test.mjs
+          python3 -m unittest discover -s test/release -v
       - name: Install system backend dependencies
         run: sudo apt-get update && sudo apt-get install -y pkg-config libblockdev-dev libblockdev-part3 libblockdev-fs3 libglib2.0-dev libblkid-dev libsystemd-dev e2fsprogs
       - name: Check and test host
@@ -45,6 +55,14 @@ jobs:
           zig build -Doptimize=safe
       - name: Compile backend without GUI dependencies
         run: zig build -Dheadless=true --prefix "$RUNNER_TEMP/pizza-headless"
+      - name: Install locked browser test dependencies
+        working-directory: ui
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Test browser layouts and user journeys
+        timeout-minutes: 5
+        run: node ui/partition/test/layout.browser.mjs
       - name: Compile VM artifact builder
         run: |
           zig build compile-linux-vm -Dheadless=true
@@ -57,6 +75,10 @@ jobs:
           zig-out/bin/pizza inventory > "$RUNNER_TEMP/pizza-inventory.json"
       - name: Cross-compile Windows backend
         run: zig build compile -Dtarget=x86_64-windows-gnu -Dwindows-lld=true
+      - name: Verify staged candidate before packaging
+        if: inputs.maintenance-artifact != ''
+        shell: bash
+        run: python test/release/candidate.py verify --root candidate/maintenance --protocol vendor/pizza-protocol --stage zig-out
       - name: Package tested Linux installation
         run: |
           mkdir -p dist
@@ -70,20 +92,24 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: Pizza-Partition/Pizza
+          ref: ${{ inputs.host-ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: inputs.maintenance-artifact != ''
+        with:
+          name: ${{ inputs.maintenance-artifact }}
+          path: candidate/maintenance
+      - name: Bind this build to the tested maintenance candidate
+        if: inputs.maintenance-artifact != ''
+        shell: bash
+        run: |
+          python test/release/candidate.py verify --root candidate/maintenance --protocol vendor/pizza-protocol
+          python -c 'from pathlib import Path; print("PIZZA_MAINTENANCE_SOURCE=" + str(Path("candidate/maintenance").resolve()))' >> "$GITHUB_ENV"
       - name: Install locked Zig 0.17.0
         shell: pwsh
-        run: |
-          $lock = Get-Content config/toolchain.json -Raw | ConvertFrom-Json
-          $source = $lock.'x86_64-windows'
-          $directory = Join-Path $env:RUNNER_TEMP ('pizza-zig-' + [guid]::NewGuid())
-          New-Item -ItemType Directory -Path $directory | Out-Null
-          $archive = Join-Path $directory 'zig.zip'
-          Invoke-WebRequest $source.url -OutFile $archive
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $source.sha256) { throw 'Zig archive SHA-256 mismatch' }
-          Expand-Archive $archive $directory
-          $installed = Join-Path $directory ('zig-x86_64-windows-' + $lock.version)
-          if ((& (Join-Path $installed 'zig.exe') version).Trim() -ne $lock.version) { throw 'Zig version mismatch' }
-          $installed | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        run: node tools/install-zig.mjs
       - name: Compile and test Windows backend
         shell: pwsh
         run: |
@@ -99,6 +125,10 @@ jobs:
         run: |
           zig build test-windows-image -Dheadless=true -Dwindows-lld=true --summary all
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify staged candidate before packaging
+        if: inputs.maintenance-artifact != ''
+        shell: bash
+        run: python test/release/candidate.py verify --root candidate/maintenance --protocol vendor/pizza-protocol --stage zig-out
       - name: Package tested Windows installation
         shell: pwsh
         run: |

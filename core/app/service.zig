@@ -46,7 +46,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             for (std.meta.tags(wire.FilesystemKind)) |fs| {
                 if (try self.disk.canFs(a, fs, .format, false, false)) try formats.append(a, @tagName(fs));
             }
-            return std.json.Stringify.valueAlloc(a, .{ .version = proto.API_VERSION, .protocol = proto.API_VERSION, .writes_enabled = readiness == .ready, .maintenance_available = self.maintenance != null, .execution_issue = issue, .formats = formats.items, .capabilities = .{ "inventory", "plan", "validate", "execute", "status", "cancel" } }, .{ .emit_null_optional_fields = false });
+            return std.json.Stringify.valueAlloc(a, .{ .version = proto.API_VERSION, .protocol = proto.API_VERSION, .writes_enabled = readiness == .ready, .maintenance_available = self.maintenance != null, .execution_issue = issue, .formats = formats.items, .capabilities = .{ "inventory", "plan", "validate", "execute", "status", "cancel", "discover" } }, .{ .emit_null_optional_fields = false });
         }
 
         pub fn dispatch(self: *Self, a: std.mem.Allocator, bytes: []const u8, access: Access) ![]const u8 {
@@ -60,7 +60,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             }
             if (access == .local) {
                 // Polling and cancellation reuse authorization instead of prompting.
-                return (if (r.action == .status or r.action == .cancel)
+                return (if (r.action == .status or r.action == .cancel or r.action == .discover)
                     try self.sessions.call(a, bytes)
                 else
                     try self.sessions.elevate(a, bytes)) orelse error.PrivilegedServiceUnavailable;
@@ -68,6 +68,15 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             if (!self.sessions.isPrivileged()) return error.RootRequired;
             switch (r.action) {
                 .execute => return std.json.Stringify.valueAlloc(a, try coordinator.start(self, a, r), .{ .emit_null_optional_fields = false }),
+                .discover => {
+                    const maintenance = if (self.maintenance) |m|
+                        (if (m.discover) |discover| try discover(m.context, a, self.io) else null)
+                    else
+                        null;
+                    const id = (try self.sessions.worker.currentId(a)) orelse (try self.sessions.store.latest(a));
+                    const execution = if (id) |value| try coordinator.status(self, a, value) else null;
+                    return std.json.Stringify.valueAlloc(a, wire.SessionDiscovery{ .version = proto.API_VERSION, .maintenance = maintenance, .execution = execution }, .{ .emit_null_optional_fields = false });
+                },
                 .status => {
                     const latest = if (r.session_id == null)
                         (try self.sessions.worker.currentId(a)) orelse (try self.sessions.store.latest(a)) orelse return error.SessionNotFound
