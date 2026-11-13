@@ -128,9 +128,76 @@ test "range resume replays an interrupted append and rejects a foreign extent" {
     try std.testing.expectError(error.InvalidContentRange, mergeTail(alloc, io, part, 11));
     try std.testing.expectEqualStrings("abcdef", try std.Io.Dir.cwd().readFileAlloc(io, part.path, alloc, .limited(512 * 1024 * 1024)));
 }
-fn parallelDownload(init: std.process.Init, config: config_api.Config, image: config_api.Image, partial: []const u8) !void {
-    const a = init.arena.allocator();
-    const io = init.io;
+// curl's default retry policy excludes TLS read failures. Retry those at the
+// segment layer so every interrupted tail is range-checked before resuming.
+fn retryableTransfer(term: std.process.Child.Term) bool {
+    return switch (term) {
+        .exited => |code| switch (code) {
+            5, 6, 7, 18, 28, 35, 42, 52, 55, 56, 92 => true,
+            else => false,
+        },
+        else => false,
+    };
+}
+test "TLS interruption resumes verified ranges while HTTP refusal remains fatal" {
+    const io = std.testing.io;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var temp = std.testing.tmpDir(.{});
+    defer temp.cleanup();
+    var buffer: [4096]u8 = undefined;
+    const n = try temp.dir.realPath(io, &buffer);
+    const root = buffer[0..n];
+    const curl = try temp.dir.createFile(io, "curl", .{});
+    {
+        defer curl.close(io);
+        try curl.writeStreamingAll(io,
+            \\#!/usr/bin/python3
+            \\import os, pathlib, sys
+            \\count = pathlib.Path(__file__).with_name('calls')
+            \\attempt = int(count.read_text()) if count.exists() else 0
+            \\count.write_text(str(attempt + 1))
+            \\if os.environ.get('FATAL'): sys.exit(22)
+            \\groups = [[]]
+            \\for arg in sys.argv[1:]:
+            \\    if arg == '--next': groups.append([])
+            \\    else: groups[-1].append(arg)
+            \\for args in groups:
+            \\    first, last = map(int, args[args.index('--range') + 1].split('-'))
+            \\    header = pathlib.Path(args[args.index('--dump-header') + 1])
+            \\    output = pathlib.Path(args[args.index('--output') + 1])
+            \\    header.write_text(f'HTTP/2 206\r\nContent-Range: bytes {first}-{last}/8\r\n\r\n')
+            \\    data = b'abcdefgh'[first:last + 1]
+            \\    output.write_bytes(data[:2] if attempt == 0 else data)
+            \\sys.exit(56 if attempt == 0 else 0)
+        );
+        try curl.setPermissions(io, .executable_file);
+    }
+    var env: std.process.Environ.Map = .init(a);
+    defer env.deinit();
+    const transport = try std.fs.path.join(a, &.{ root, "curl" });
+    var config = try config_api.Config.parse(a, @embedFile("images.json"));
+    config.download.connections = 2;
+    config.download.retries = 1;
+    config.download.timeout_seconds = 10;
+    var image = try config.select(null);
+    image.size = 8;
+    image.url = "https://example.invalid/fixture.iso";
+    const sha256 = vm_common.hash("abcdefgh");
+    image.sha256 = &sha256;
+    const partial = try std.fs.path.join(a, &.{ root, "fixture.partial" });
+    try parallelDownload(a, io, &env, transport, config, image, partial);
+    try verify(io, image, partial);
+    try std.testing.expectEqualStrings("abcdefgh", try std.Io.Dir.cwd().readFileAlloc(io, partial, a, .limited(100)));
+    try std.testing.expectEqualStrings("2", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
+    try temp.dir.writeFile(io, .{ .sub_path = "calls", .data = "0" });
+    try env.put("FATAL", "1");
+    const refused = try std.fs.path.join(a, &.{ root, "refused.partial" });
+    try std.testing.expectError(error.CommandFailed, parallelDownload(a, io, &env, transport, config, image, refused));
+    try std.testing.expectEqualStrings("1", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
+}
+fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.Environ.Map, transport: []const u8, config: config_api.Config, image: config_api.Image, partial: []const u8) !void {
     const manifest = try a.print("{s}.segments.json", .{partial});
     const plan = if (try exists(io, manifest)) blk: {
         const prior = try std.json.parseFromSliceLeaky(Segments, a, try std.Io.Dir.cwd().readFileAlloc(io, manifest, a, .limited(512 * 1024 * 1024)), .{});
@@ -158,24 +225,32 @@ fn parallelDownload(init: std.process.Init, config: config_api.Config, image: co
         cursor += part.length;
     }
     if (cursor != image.size) return error.InvalidSegmentManifest;
-    var argv: std.ArrayList([]const u8) = .empty;
-    try argv.appendSlice(a, &.{ "curl", "--parallel", "--parallel-immediate", "--parallel-max", try a.print("{d}", .{config.download.connections}), "--fail-early" });
-    var transfers: usize = 0;
-    for (plan.parts) |part| {
-        if (part.length == 0) continue;
-        try mergeTail(a, io, part, image.size);
-        const have = if (try exists(io, part.path)) (try std.Io.Dir.cwd().statFile(io, part.path, .{})).size else 0;
-        if (have > part.length) return error.ImageSizeMismatch;
-        if (have == part.length) continue;
-        if (transfers > 0) try argv.append(a, "--next");
-        const tail = try a.print("{s}.next", .{part.path});
-        try argv.appendSlice(a, &.{ "--fail", "--location", "--silent", "--show-error", "--proto", "=https", "--proto-redir", "=https", "--retry", try a.print("{d}", .{config.download.retries}), "--connect-timeout", try a.print("{d}", .{config.download.connect_timeout_seconds}), "--max-time", try a.print("{d}", .{config.download.timeout_seconds}), "--max-filesize", try a.print("{d}", .{part.length - have}), "--range", try a.print("{d}-{d}", .{ part.offset + have, part.offset + part.length - 1 }), "--dump-header", try a.print("{s}.headers", .{tail}), "--output", tail, "--url", image.url });
-        transfers += 1;
-    }
-    if (transfers > 0) {
-        const result = try vm_common.runAt(a, io, init.environ_map, .inherit, argv.items, null, config.download.timeout_seconds + 60);
-        for (plan.parts) |part| if (part.length > 0) try mergeTail(a, io, part, image.size);
-        _ = try vm_common.check(result);
+    var attempt: u8 = 0;
+    while (true) : (attempt += 1) {
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(a, &.{ transport, "--parallel", "--parallel-immediate", "--parallel-max", try a.print("{d}", .{config.download.connections}), "--fail-early" });
+        var transfers: usize = 0;
+        for (plan.parts) |part| {
+            if (part.length == 0) continue;
+            try mergeTail(a, io, part, image.size);
+            const have = if (try exists(io, part.path)) (try std.Io.Dir.cwd().statFile(io, part.path, .{})).size else 0;
+            if (have > part.length) return error.ImageSizeMismatch;
+            if (have == part.length) continue;
+            if (transfers > 0) try argv.append(a, "--next");
+            const tail = try a.print("{s}.next", .{part.path});
+            try argv.appendSlice(a, &.{ "--fail", "--location", "--silent", "--show-error", "--proto", "=https", "--proto-redir", "=https", "--retry", try a.print("{d}", .{config.download.retries}), "--connect-timeout", try a.print("{d}", .{config.download.connect_timeout_seconds}), "--max-time", try a.print("{d}", .{config.download.timeout_seconds}), "--max-filesize", try a.print("{d}", .{part.length - have}), "--range", try a.print("{d}-{d}", .{ part.offset + have, part.offset + part.length - 1 }), "--dump-header", try a.print("{s}.headers", .{tail}), "--output", tail, "--url", image.url });
+            transfers += 1;
+        }
+        if (transfers == 0) break;
+        {
+            const result = try vm_common.runAt(a, io, env, .inherit, argv.items, null, config.download.timeout_seconds + 60);
+            for (plan.parts) |part| if (part.length > 0) try mergeTail(a, io, part, image.size);
+            if (result.term.success()) break;
+            if (!retryableTransfer(result.term) or attempt >= config.download.retries)
+                _ = try vm_common.check(result);
+            std.debug.print("Interrupted image transfer ({f}); resuming verified ranges, retry {d}/{d}\n{s}\n", .{ result.term, attempt + 1, config.download.retries, result.stderr });
+            try std.Io.sleep(io, .fromSeconds(2), .awake);
+        }
     }
     const output = try std.Io.Dir.cwd().createFile(io, partial, .{ .truncate = false });
     defer output.close(io);
@@ -235,7 +310,7 @@ pub fn main(init: std.process.Init) !void {
         if (st.size > image.size) return error.ImageSizeMismatch;
     } else try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = receipt, .data = identity });
     std.debug.print("Fetching {s} ({d} bytes); source: {s}\n", .{ image.id, image.size, image.source_page });
-    if (config.download.connections > 1) try parallelDownload(init, config, image, partial) else if (!(try exists(io, partial)) or (try std.Io.Dir.cwd().statFile(io, partial, .{})).size != image.size) _ = try vm_common.check(try vm_common.runAt(a, io, init.environ_map, .inherit, &.{
+    if (config.download.connections > 1) try parallelDownload(a, io, init.environ_map, "curl", config, image, partial) else if (!(try exists(io, partial)) or (try std.Io.Dir.cwd().statFile(io, partial, .{})).size != image.size) _ = try vm_common.check(try vm_common.runAt(a, io, init.environ_map, .inherit, &.{
         "curl",    "--fail",                                       "--location",        "--silent",                                                     "--show-error", "--proto",                                              "=https",         "--proto-redir",                   "=https",
         "--retry", try a.print("{d}", .{config.download.retries}), "--connect-timeout", try a.print("{d}", .{config.download.connect_timeout_seconds}), "--max-time",   try a.print("{d}", .{config.download.timeout_seconds}), "--max-filesize", try a.print("{d}", .{image.size}), "--continue-at",
         "-",       "--output",                                     partial,             "--url",                                                        image.url,
