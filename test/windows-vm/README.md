@@ -228,3 +228,7 @@ GitHub KVM runners may also lack `pku`, `spec-ctrl`, `ssbd` and `wbnoinvd` from
 the Icelake model. Both installation and acceptance explicitly mask those optional
 flags. CPU validation remains `check='full'`; unsupported required features still
 fail before boot, and the CPU recipe remains part of the immutable baseline key.
+
+The runner pool also includes hosts without AVX-512/GFNI. Those optional vector
+features are explicitly disabled in the same shared profile. SSE4.2/POPCNT and
+the baseline required by the guest remain required and fully validated.

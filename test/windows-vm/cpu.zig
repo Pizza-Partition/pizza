@@ -1,6 +1,7 @@
 // Shared by installation and every acceptance overlay. Keep full CPU validation:
 // the named Intel CPU avoids the AMD Windows PMU path observed in crash dumps.
-// These feature masks were validated on the AMD host used for the local trial.
+// The base Intel profile was validated on the AMD host used for the local trial.
+// Optional vector/MSR flags unavailable in the runner pool are excluded below.
 // Nested Intel VT-x capabilities cannot be supplied by AMD KVM.
 pub const xml =
     "<features>" ++
@@ -14,6 +15,18 @@ pub const xml =
     "</model>" ++
     // These optional Icelake flags were absent on the GitHub KVM runner.
     // Keep full validation while exposing only the supported feature set.
+    "<feature policy='disable' name='avx512f'/>" ++
+    "<feature policy='disable' name='avx512dq'/>" ++
+    "<feature policy='disable' name='avx512ifma'/>" ++
+    "<feature policy='disable' name='avx512cd'/>" ++
+    "<feature policy='disable' name='avx512bw'/>" ++
+    "<feature policy='disable' name='avx512vl'/>" ++
+    "<feature policy='disable' name='avx512vbmi'/>" ++
+    "<feature policy='disable' name='avx512vbmi2'/>" ++
+    "<feature policy='disable' name='gfni'/>" ++
+    "<feature policy='disable' name='avx512vnni'/>" ++
+    "<feature policy='disable' name='avx512bitalg'/>" ++
+    "<feature policy='disable' name='avx512-vpopcntdq'/>" ++
     "<feature policy='disable' name='pku'/>" ++
     "<feature policy='disable' name='spec-ctrl'/>" ++
     "<feature policy='disable' name='ssbd'/>" ++
