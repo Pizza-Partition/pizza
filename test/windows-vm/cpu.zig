@@ -12,6 +12,12 @@ pub const xml =
     "<cpu mode='custom' match='exact' check='full'>" ++
     "<model fallback='forbid'>Icelake-Server-v6" ++
     "</model>" ++
+    // These optional Icelake flags were absent on the GitHub KVM runner.
+    // Keep full validation while exposing only the supported feature set.
+    "<feature policy='disable' name='pku'/>" ++
+    "<feature policy='disable' name='spec-ctrl'/>" ++
+    "<feature policy='disable' name='ssbd'/>" ++
+    "<feature policy='disable' name='wbnoinvd'/>" ++
     "<feature policy='disable' name='pcid'/>" ++
     "<feature policy='disable' name='la57'/>" ++
     "<feature policy='disable' name='ibrs-all'/>" ++

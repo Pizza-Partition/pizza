@@ -223,3 +223,8 @@ VM 会明确启动失败，不会自动降级 CPU 型号。
 失败恢复重试。证据位于 `.zig-cache/review-e2e-20261110/intel-icelake-trial/result.json`。
 这项本地验证仅覆盖基线制作，完整原生及重启验收由本次 CI 验证；其结果不能等同于
 真实 Intel 硬件 PMU 测试，也尚未证明原始云端蓝屏的完整上游根因。
+
+GitHub KVM runners may also lack `pku`, `spec-ctrl`, `ssbd` and `wbnoinvd` from
+the Icelake model. Both installation and acceptance explicitly mask those optional
+flags. CPU validation remains `check='full'`; unsupported required features still
+fail before boot, and the CPU recipe remains part of the immutable baseline key.
