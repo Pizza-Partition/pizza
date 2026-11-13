@@ -163,14 +163,17 @@ test "TLS interruption resumes verified ranges while HTTP refusal remains fatal"
             \\for arg in sys.argv[1:]:
             \\    if arg == '--next': groups.append([])
             \\    else: groups[-1].append(arg)
-            \\for args in groups:
+            \\ranges = []
+            \\for index, args in enumerate(groups):
             \\    first, last = map(int, args[args.index('--range') + 1].split('-'))
             \\    header = pathlib.Path(args[args.index('--dump-header') + 1])
             \\    output = pathlib.Path(args[args.index('--output') + 1])
             \\    header.write_text(f'HTTP/2 206\r\nContent-Range: bytes {first}-{last}/8\r\n\r\n')
             \\    data = b'abcdefgh'[first:last + 1]
-            \\    output.write_bytes(data[:2] if attempt == 0 else data)
-            \\sys.exit(56 if attempt == 0 else 0)
+            \\    output.write_bytes(data[:2] if attempt == 0 and index == 0 else data)
+            \\    ranges.append(f'{first}-{last}')
+            \\with pathlib.Path(__file__).with_name('ranges').open('a') as log: log.write(','.join(ranges) + '\n')
+            \\sys.exit(0 if os.environ.get('MASKED_SUCCESS') else 56 if attempt == 0 else 0)
         );
         try curl.setPermissions(io, .executable_file);
     }
@@ -191,11 +194,31 @@ test "TLS interruption resumes verified ranges while HTTP refusal remains fatal"
     try verify(io, image, partial);
     try std.testing.expectEqualStrings("abcdefgh", try std.Io.Dir.cwd().readFileAlloc(io, partial, a, .limited(100)));
     try std.testing.expectEqualStrings("2", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
+    try std.testing.expectEqualStrings("0-3,4-7\n2-3\n", try temp.dir.readFileAlloc(io, "ranges", a, .limited(100)));
+    try temp.dir.writeFile(io, .{ .sub_path = "calls", .data = "0" });
+    try env.put("MASKED_SUCCESS", "1");
+    const masked = try std.fs.path.join(a, &.{ root, "masked.partial" });
+    try parallelDownload(a, io, &env, transport, config, image, masked);
+    try verify(io, image, masked);
+    try std.testing.expectEqualStrings("2", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
+    _ = env.swapRemove("MASKED_SUCCESS");
     try temp.dir.writeFile(io, .{ .sub_path = "calls", .data = "0" });
     try env.put("FATAL", "1");
     const refused = try std.fs.path.join(a, &.{ root, "refused.partial" });
     try std.testing.expectError(error.CommandFailed, parallelDownload(a, io, &env, transport, config, image, refused));
     try std.testing.expectEqualStrings("1", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
+    // The real multi-gigabyte ISO must not require long-lived 490 MB ranges.
+    image.size = 3928064000;
+    const large = try std.fs.path.join(a, &.{ root, "large.partial" });
+    try std.testing.expectError(error.CommandFailed, parallelDownload(a, io, &env, transport, config, image, large));
+    const plan = try std.json.parseFromSliceLeaky(Segments, a, try std.Io.Dir.cwd().readFileAlloc(io, try a.print("{s}.segments.json", .{large}), a, .limited(1024 * 1024)), .{});
+    try std.testing.expect(plan.parts.len > config.download.connections);
+    var total: u64 = 0;
+    for (plan.parts) |part| {
+        try std.testing.expect(part.length <= 64 * 1024 * 1024);
+        total += part.length;
+    }
+    try std.testing.expectEqual(image.size, total);
 }
 fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.Environ.Map, transport: []const u8, config: config_api.Config, image: config_api.Image, partial: []const u8) !void {
     const manifest = try a.print("{s}.segments.json", .{partial});
@@ -206,8 +229,14 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
     } else blk: {
         const prefix = if (try exists(io, partial)) (try std.Io.Dir.cwd().statFile(io, partial, .{})).size else 0;
         if (prefix == image.size) return;
-        const parts = try a.alloc(Segment, config.download.connections);
-        const chunk = (image.size - prefix + parts.len - 1) / parts.len;
+        if (prefix > image.size) return error.PartialImageSourceMismatch;
+        const remaining = image.size - prefix;
+        // Bound each request's lifetime; the mirror repeatedly truncated the
+        // former ~490 MB ranges in hosted CI. Concurrency remains independent.
+        const chunk = @min(64 * 1024 * 1024, try std.math.divCeil(u64, remaining, config.download.connections));
+        const count = try std.math.divCeil(u64, remaining, chunk);
+        if (count > 4096) return error.InvalidSegmentManifest;
+        const parts = try a.alloc(Segment, @intCast(count));
         for (parts, 0..) |*part, index| {
             const offset = @min(image.size, prefix + index * chunk);
             part.* = .{ .path = try a.print("{s}.part-{d}", .{ partial, index }), .offset = offset, .length = @min(chunk, image.size - offset) };
@@ -218,7 +247,7 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
     };
     // The segment manifest is cache data: validate every filename and extent
     // before opening or deleting anything that it names.
-    if (plan.prefix > image.size or plan.parts.len == 0 or plan.parts.len > 16) return error.InvalidSegmentManifest;
+    if (plan.prefix > image.size or plan.parts.len == 0 or plan.parts.len > 4096) return error.InvalidSegmentManifest;
     var cursor = plan.prefix;
     for (plan.parts, 0..) |part, index| {
         if (!std.mem.eql(u8, part.path, try a.print("{s}.part-{d}", .{ partial, index })) or part.offset != cursor or part.length > image.size - cursor) return error.InvalidSegmentManifest;
@@ -228,7 +257,7 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
     var attempt: u8 = 0;
     while (true) : (attempt += 1) {
         var argv: std.ArrayList([]const u8) = .empty;
-        try argv.appendSlice(a, &.{ transport, "--parallel", "--parallel-immediate", "--parallel-max", try a.print("{d}", .{config.download.connections}), "--fail-early" });
+        try argv.appendSlice(a, &.{ transport, "--parallel", "--parallel-immediate", "--parallel-max", try a.print("{d}", .{config.download.connections}) });
         var transfers: usize = 0;
         for (plan.parts) |part| {
             if (part.length == 0) continue;
@@ -244,11 +273,23 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
         if (transfers == 0) break;
         {
             const result = try vm_common.runAt(a, io, env, .inherit, argv.items, null, config.download.timeout_seconds + 60);
-            for (plan.parts) |part| if (part.length > 0) try mergeTail(a, io, part, image.size);
-            if (result.term.success()) break;
-            if (!retryableTransfer(result.term) or attempt >= config.download.retries)
+            var complete = true;
+            for (plan.parts) |part| {
+                if (part.length == 0) continue;
+                try mergeTail(a, io, part, image.size);
+                const have = if (try exists(io, part.path)) (try std.Io.Dir.cwd().statFile(io, part.path, .{})).size else 0;
+                if (have != part.length) complete = false;
+            }
+            // With multiple URLs curl can return success for the last transfer
+            // even when an earlier range failed. Inspect every segment as well.
+            if (result.term.success() and complete) break;
+            if (!result.term.success() and !retryableTransfer(result.term))
                 _ = try vm_common.check(result);
-            std.debug.print("Interrupted image transfer ({f}); resuming verified ranges, retry {d}/{d}\n{s}\n", .{ result.term, attempt + 1, config.download.retries, result.stderr });
+            std.debug.print("Incomplete image transfer ({f}); verified ranges retained, attempt {d}/{d}\n{s}\n", .{ result.term, attempt + 1, config.download.retries + 1, result.stderr });
+            if (attempt >= config.download.retries) {
+                _ = try vm_common.check(result);
+                return error.ImageSizeMismatch;
+            }
             try std.Io.sleep(io, .fromSeconds(2), .awake);
         }
     }
