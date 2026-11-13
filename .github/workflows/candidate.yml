@@ -156,7 +156,7 @@ jobs:
         if: inputs.maintenance-artifact == ''
         run: |
           set -euo pipefail
-          bash tools/fetch-deps.sh
+          python3 tools/fetch-deps.py
           zig build test-unit test-session test-maint-session-image test-filesystems -Doptimize=safe -j4 --summary all
           zig build bundle image uki protocol-package -Dcandidate-runtime="$PWD/candidate-runtime" -Duki-stub="$RUNNER_TEMP/linuxx64.efi.stub" -Doptimize=safe -j4 --summary all
           zig build test-maintenance -Doptimize=safe -j4 -- --candidate-runtime --bundle zig-out/runtime/bundle --kernel-version 7.2.11-arch1-1 --timeout 180
