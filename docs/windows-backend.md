@@ -5,7 +5,7 @@
 
 ## 构建
 
-使用 `.zigversion` 指定的 Zig 0.17.0。Windows 原生构建执行 `zig build -Dwindows-lld=true`；
+使用 `.zigversion` 指定的 Zig 0.17.1。Windows 原生构建执行 `zig build -Dwindows-lld=true`；
 Linux 上执行 `zig build compile -Dtarget=x86_64-windows-gnu -Dwindows-lld=true` 只编译主程序和宿主测试。
 这是当前固定工具链下已验证的构建组合，原因见下方核查；并非 zigwin32 的依赖要求。
 窗口需要 WebView2 Runtime，`pizza serve` 提供显式浏览器入口。
@@ -21,7 +21,7 @@ zig fetch --save=win32 https://codeload.github.com/marlersoft/zigwin32/tar.gz/6f
 
 ### 链接器核查
 
-在 Linux 上使用项目固定的 Zig 0.17.0，以 `x86_64-windows-gnu` 为目标，
+在 Linux 上使用项目固定的 Zig 0.17.1，以 `x86_64-windows-gnu` 为目标，
 移除 zigwin32、WebUI 和应用代码后，以下程序仍能复现原生链接器失败：
 
 ```zig

@@ -1,6 +1,6 @@
 # Pizza
 
-Linux / Windows 桌面磁盘规划工具，使用 Zig 0.17.0 和 zig-webui。Linux 动态链接系统
+Linux / Windows 桌面磁盘规划工具，使用 Zig 0.17.1 和 zig-webui。Linux 动态链接系统
 libblockdev，Windows 使用 zigwin32 与系统存储 API；不会携带维护系统的运行库，也不会链接 storage。
 
 三个仓库的边界：

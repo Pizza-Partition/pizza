@@ -1,4 +1,5 @@
 //! Composition root: CLI dispatch and concrete platform wiring.
+const json = @import("json.zig").json;
 const std = @import("std");
 const cli = @import("cli.zig");
 const wire = @import("proto").wire;
@@ -31,9 +32,8 @@ pub fn main(init: std.process.Init) !u8 {
         return 0;
     }
 
-    var app: Service = .{ .io = init.io, .disk = .{ .io = init.io } };
     var maintenance: Maintenance = .{ .image_digest = @import("build_options").maintenance_image_digest, .io = init.io };
-    app.maintenance = maintenance.controller();
+    var app: Service = .{ .io = init.io, .disk = .{ .io = init.io }, .maintenance = maintenance.controller() };
     if (comptime builtin.os.tag == .windows) app.sessions.parent_pid = options.parent_pid;
     switch (options.mode) {
         // Privileged services, use for disk operations and session management. This mode is only
@@ -43,11 +43,7 @@ pub fn main(init: std.process.Init) !u8 {
         .inventory => {
             try std.Io.File.stdout().writeStreamingAll(
                 init.io,
-                try std.json.Stringify.valueAlloc(
-                    a,
-                    try app.disk.query(a),
-                    .{ .emit_null_optional_fields = false },
-                ),
+                try json(a, try app.disk.query(a)),
             );
             return 0;
         },
@@ -65,11 +61,7 @@ pub fn main(init: std.process.Init) !u8 {
             const draft = try std.json.parseFromSliceLeaky(wire.PlanDraft, a, bytes, .{});
             try std.Io.File.stdout().writeStreamingAll(
                 init.io,
-                try std.json.Stringify.valueAlloc(
-                    a,
-                    try @import("planning/planner.zig").validate(a, try app.disk.query(a), draft, &app.disk),
-                    .{ .emit_null_optional_fields = false },
-                ),
+                try json(a, try @import("planning/planner.zig").validate(a, try app.disk.query(a), draft, &app.disk)),
             );
             return 0;
         },
@@ -88,7 +80,7 @@ pub fn main(init: std.process.Init) !u8 {
             return 0;
         },
         .@"complete-session" => {
-            const request = try std.json.Stringify.valueAlloc(a, wire.PrivilegedRequest{ .version = @import("proto").API_VERSION, .action = .complete }, .{ .emit_null_optional_fields = false });
+            const request = try json(a, wire.PrivilegedRequest{ .version = @import("proto").API_VERSION, .action = .complete });
             try std.Io.File.stdout().writeStreamingAll(init.io, try app.dispatch(a, request, if (app.sessions.isPrivileged()) .privileged else .local));
             return 0;
         },

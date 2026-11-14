@@ -4,7 +4,22 @@ const proto = @import("proto");
 const native = @import("native.zig");
 const security = @import("ipc/security.zig");
 pub const Maintenance = @import("../../boot/maintenance.zig").Maintenance(@This());
-pub const Store = @import("ipc/store.zig");
+pub const Store = struct {
+    inner: @import("ipc/store.zig"),
+    const pending_key = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    pub fn openMaintenance(a: std.mem.Allocator) !Store {
+        return .{ .inner = try @import("ipc/store.zig").openMaintenance(a) };
+    }
+    pub fn deinit(self: *Store) void {
+        self.inner.deinit();
+    }
+    pub fn read(self: *Store, a: std.mem.Allocator) !?[]const u8 {
+        return self.inner.read(a, pending_key);
+    }
+    pub fn persist(self: *Store, bytes: []const u8) !void {
+        try self.inner.persist(pending_key, bytes);
+    }
+};
 pub const Esp = @import("esp.zig").Esp;
 pub const Uefi = @import("uefi.zig").Uefi;
 pub const power = @import("power.zig");

@@ -9,7 +9,6 @@ const uefi = @import("uefi.zig");
 
 pub fn Maintenance(comptime Platform: type) type {
     return struct {
-        const PENDING_KEY = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
         const Self = @This();
         const Esp = Platform.Esp;
         const Store = Platform.Store;
@@ -25,7 +24,7 @@ pub fn Maintenance(comptime Platform: type) type {
             return .{ .context = self, .prepare = prepare, .reboot = reboot, .complete = complete, .pending = pending, .cancel = cancel, .discover = discover };
         }
         fn load(a: std.mem.Allocator, store: *Store) !?Pending {
-            const bytes = try store.read(a, PENDING_KEY) orelse return null;
+            const bytes = try store.read(a) orelse return null;
             return decodePending(a, bytes) catch |err| {
                 // A protected terminal record from an older request schema is
                 // archival state. The independent firmware pin still prevents
@@ -66,8 +65,8 @@ pub fn Maintenance(comptime Platform: type) type {
         }
         fn save(a: std.mem.Allocator, store: *Store, value: Pending) !void {
             const bytes = try std.json.Stringify.valueAlloc(a, value, .{});
-            try store.persist(PENDING_KEY, bytes);
-            const readback = try store.read(a, PENDING_KEY) orelse return error.PreparedSessionMissing;
+            try store.persist(bytes);
+            const readback = try store.read(a) orelse return error.PreparedSessionMissing;
             if (!std.mem.eql(u8, bytes, readback)) return error.PreparedSessionChanged;
         }
         fn binding(request: Handoff.Request, bytes: []const u8) !boot.Binding {
@@ -388,10 +387,10 @@ const MemoryPlatform = struct {
             return .{};
         }
         pub fn deinit(_: *Store) void {}
-        pub fn read(_: *Store, allocator: std.mem.Allocator, _: []const u8) !?[]const u8 {
+        pub fn read(_: *Store, allocator: std.mem.Allocator) !?[]const u8 {
             return if (record) |bytes| try allocator.dupe(u8, bytes) else null;
         }
-        pub fn persist(_: *Store, _: []const u8, bytes: []const u8) !void {
+        pub fn persist(_: *Store, bytes: []const u8) !void {
             record = try a.dupe(u8, bytes);
         }
     };

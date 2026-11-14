@@ -9,13 +9,36 @@ pub const File = enum { image, manifest, lease, receipt, request, anchor };
 /// Application-facing port. The platform owns trusted artifacts, its protected
 /// pending record, ESP admission and the actual reboot mechanism.
 pub const Controller = struct {
+    available: bool = true,
     context: *anyopaque,
     prepare: *const fn (*anyopaque, std.mem.Allocator, std.Io, proto.wire.InventorySnapshot, proto.wire.ValidatedPlan) anyerror!proto.wire.MaintenanceSession,
     reboot: *const fn (*anyopaque, std.mem.Allocator, std.Io, []const u8, []const u8) anyerror!proto.wire.MaintenanceSession,
     complete: *const fn (*anyopaque, std.mem.Allocator, std.Io, ?[]const u8) anyerror!proto.wire.CompletionReceipt,
     pending: *const fn (*anyopaque) anyerror!bool,
-    discover: ?*const fn (*anyopaque, std.mem.Allocator, std.Io) anyerror!?proto.wire.MaintenanceSession = null,
-    cancel: ?*const fn (*anyopaque, std.mem.Allocator, std.Io, []const u8, ?[]const u8) anyerror!?proto.wire.MaintenanceSession = null,
+    discover: *const fn (*anyopaque, std.mem.Allocator, std.Io) anyerror!?proto.wire.MaintenanceSession,
+    cancel: *const fn (*anyopaque, std.mem.Allocator, std.Io, []const u8, ?[]const u8) anyerror!?proto.wire.MaintenanceSession,
+    /// Explicit test/demo port; production installs its platform controller.
+    pub fn unavailable(context: *anyopaque) Controller {
+        return .{ .available = false, .context = context, .prepare = unavailablePrepare, .reboot = unavailableReboot, .complete = unavailableComplete, .pending = noPending, .discover = noDiscovery, .cancel = noCancellation };
+    }
+    fn unavailablePrepare(_: *anyopaque, _: std.mem.Allocator, _: std.Io, _: proto.wire.InventorySnapshot, _: proto.wire.ValidatedPlan) !proto.wire.MaintenanceSession {
+        return error.MaintenancePreparationUnavailable;
+    }
+    fn unavailableReboot(_: *anyopaque, _: std.mem.Allocator, _: std.Io, _: []const u8, _: []const u8) !proto.wire.MaintenanceSession {
+        return error.MaintenancePreparationUnavailable;
+    }
+    fn unavailableComplete(_: *anyopaque, _: std.mem.Allocator, _: std.Io, _: ?[]const u8) !proto.wire.CompletionReceipt {
+        return error.NoCompletionReceipt;
+    }
+    fn noPending(_: *anyopaque) !bool {
+        return false;
+    }
+    fn noDiscovery(_: *anyopaque, _: std.mem.Allocator, _: std.Io) !?proto.wire.MaintenanceSession {
+        return null;
+    }
+    fn noCancellation(_: *anyopaque, _: std.mem.Allocator, _: std.Io, _: []const u8, _: ?[]const u8) !?proto.wire.MaintenanceSession {
+        return null;
+    }
 };
 pub const Store = struct {
     context: *anyopaque,

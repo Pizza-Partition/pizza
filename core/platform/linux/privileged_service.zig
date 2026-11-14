@@ -6,7 +6,7 @@ const client = @import("ipc/client.zig");
 const Worker = @import("../../execution/worker.zig");
 const Store = @import("ipc/store.zig");
 const transport = @import("ipc/transport.zig");
-const validId = Worker.validId;
+const isSessionId = Worker.isSessionId;
 pub const Handler = *const fn (?*anyopaque, std.mem.Allocator, []const u8) []const u8;
 worker: Worker = .{},
 store: Store = .{},
@@ -53,7 +53,7 @@ pub fn serve(self: *Session, io: std.Io, context: ?*anyopaque, handler: Handler)
     const owner = std.fmt.parseInt(libc.uid_t, std.mem.span(user), 10) catch return 1;
     if (owner == 0) return 1;
     var input: [65]u8 = undefined;
-    if (!transport.readExact(0, &input) or input[64] != '\n' or !validId(input[0..64])) return 1;
+    if (!transport.readExact(0, &input) or input[64] != '\n' or !isSessionId(input[0..64])) return 1;
     store.owner = owner;
     var server: Server = .{ .token = input[0..64].*, .worker = worker, .context = context, .handler = handler };
     var dir_buffer: [128]u8 = undefined;

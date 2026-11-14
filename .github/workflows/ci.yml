@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-      - name: Install locked Zig 0.17.0
+      - name: Install locked Zig 0.17.1
         run: node tools/install-zig.mjs
       - name: Verify shared sources and toolchain installation rules
         run: |
@@ -107,7 +107,7 @@ jobs:
         run: |
           python test/release/candidate.py verify --root candidate/maintenance --protocol vendor/pizza-protocol
           python -c 'from pathlib import Path; print("PIZZA_MAINTENANCE_SOURCE=" + str(Path("candidate/maintenance").resolve()))' >> "$GITHUB_ENV"
-      - name: Install locked Zig 0.17.0
+      - name: Install locked Zig 0.17.1
         shell: pwsh
         run: node tools/install-zig.mjs
       - name: Compile and test Windows backend

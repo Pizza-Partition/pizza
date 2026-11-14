@@ -3,7 +3,7 @@ const Store = @This();
 const std = @import("std");
 const libc = @import("libc");
 const transport = @import("transport.zig");
-const validId = @import("../../../execution/worker.zig").validId;
+const isSessionId = @import("../../../execution/worker.zig").isSessionId;
 owner: libc.uid_t = 0,
 const MAX_RECORD = 4 * 1024 * 1024;
 
@@ -20,39 +20,49 @@ fn openSessions(self: *const Store) !c_int {
     return fd;
 }
 fn persistAt(dir: c_int, id: []const u8, json: []const u8) !void {
-    if (!validId(id) or json.len > MAX_RECORD) return error.InvalidSession;
+    if (!isSessionId(id) or json.len > MAX_RECORD) return error.InvalidSession;
+    var name_buffer: [80]u8 = undefined;
+    try replaceFile(dir, try std.mem.printSentinel(&name_buffer, "{s}.json", .{id}, 0), json);
+}
+/// Atomically publish a private file in an already trusted directory.
+pub fn replaceFile(dir: c_int, name: [:0]const u8, bytes: []const u8) !void {
     var random: [16]u8 = undefined;
     if (libc.getrandom(&random, random.len, 0) != random.len) return error.RandomUnavailable;
-    var name_buffer: [80]u8 = undefined;
-    const name = try std.mem.printSentinel(&name_buffer, "{s}.json", .{id}, 0);
-    var temp_buffer: [144]u8 = undefined;
-    const temp = try std.mem.printSentinel(&temp_buffer, "{s}.{s}.tmp", .{ id, std.fmt.bytesToHex(random, .lower) }, 0);
+    var buffer: [64]u8 = undefined;
+    const temp = try std.mem.printSentinel(&buffer, "{s}.tmp", .{std.fmt.bytesToHex(random, .lower)}, 0);
     const file = libc.openat(dir, temp, libc.O_CREAT | libc.O_EXCL | libc.O_WRONLY | libc.O_CLOEXEC | libc.O_NOFOLLOW, @as(libc.mode_t, 0o600));
     if (file < 0) return error.SessionSyncFailed;
     defer _ = libc.close(file);
     errdefer _ = libc.unlinkat(dir, temp, 0);
-    if (!transport.writeAll(file, json) or libc.fsync(file) != 0 or libc.renameat(dir, temp, dir, name) != 0 or libc.fsync(dir) != 0) return error.SessionSyncFailed;
+    if (!transport.writeAll(file, bytes) or libc.fsync(file) != 0 or libc.renameat(dir, temp, dir, name) != 0 or libc.fsync(dir) != 0) return error.SessionSyncFailed;
 }
+
 pub fn persist(self: *Store, id: []const u8, json: []const u8) !void {
     const dir = try self.openSessions();
     defer _ = libc.close(dir);
     try persistAt(dir, id, json);
 }
 fn readAt(a: std.mem.Allocator, dir: c_int, id: []const u8, uid: libc.uid_t) !?[]const u8 {
-    if (!validId(id)) return error.InvalidSession;
+    if (!isSessionId(id)) return error.InvalidSession;
     var name_buffer: [80]u8 = undefined;
-    const file = libc.openat(dir, try std.mem.printSentinel(&name_buffer, "{s}.json", .{id}, 0), libc.O_RDONLY | libc.O_CLOEXEC | libc.O_NOFOLLOW | libc.O_NONBLOCK);
+    return readFile(a, dir, try std.mem.printSentinel(&name_buffer, "{s}.json", .{id}, 0), uid, recordSize);
+}
+fn recordSize(stat: libc.struct_stat) bool {
+    return stat.st_size >= 0 and stat.st_size <= MAX_RECORD;
+}
+/// Check ownership and file type before applying the caller's record policy.
+pub fn readFile(a: std.mem.Allocator, dir: c_int, name: [:0]const u8, uid: libc.uid_t, comptime allowed: fn (libc.struct_stat) bool) !?[]const u8 {
+    const file = libc.openat(dir, name, libc.O_RDONLY | libc.O_CLOEXEC | libc.O_NOFOLLOW | libc.O_NONBLOCK);
     if (file < 0) return if (libc.__errno_location().* == libc.ENOENT) null else error.SessionRecordUnavailable;
     defer _ = libc.close(file);
     var stat: libc.struct_stat = undefined;
-    if (libc.fstat(file, &stat) != 0 or !regular(stat, uid) or stat.st_size < 0 or stat.st_size > MAX_RECORD) return error.UnsafeSessionRecord;
+    if (libc.fstat(file, &stat) != 0 or !regular(stat, uid) or !allowed(stat)) return error.UnsafeSessionRecord;
     const bytes = try a.alloc(u8, @intCast(stat.st_size));
-    if (!transport.readExact(file, bytes)) {
-        a.free(bytes);
-        return error.SessionRecordReadFailed;
-    }
+    errdefer a.free(bytes);
+    if (!transport.readExact(file, bytes)) return error.SessionRecordReadFailed;
     return bytes;
 }
+
 pub fn read(self: *Store, a: std.mem.Allocator, id: []const u8) !?[]const u8 {
     const dir = try self.openSessions();
     defer _ = libc.close(dir);
@@ -78,7 +88,7 @@ pub fn latest(self: *Store, a: std.mem.Allocator) !?[]const u8 {
         count += 1;
         if (count >= 100_000) return error.TooManySessions;
         const name = std.mem.sliceTo(&entry.*.d_name, 0);
-        if (name.len != 69 or !std.mem.endsWith(u8, name, ".json") or !validId(name[0..64])) continue;
+        if (name.len != 69 or !std.mem.endsWith(u8, name, ".json") or !isSessionId(name[0..64])) continue;
         var stat: libc.struct_stat = undefined;
         if (libc.fstatat(libc.dirfd(dir), name.ptr, &stat, libc.AT_SYMLINK_NOFOLLOW) != 0) {
             if (libc.__errno_location().* == libc.ENOENT) continue;

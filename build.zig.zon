@@ -1,8 +1,8 @@
 .{
     .name = .pizza,
-    .version = "0.5.8",
+    .version = "0.5.9",
     .fingerprint = 0xcfdd826fa2266c7f,
-    .minimum_zig_version = "0.17.0",
+    .minimum_zig_version = "0.17.1",
     .dependencies = .{
         .zig_webui = .{
             .url = "https://github.com/webui-dev/zig-webui/archive/e89087c3e9846d73c4d71865140d8a8ab64082b5.tar.gz",

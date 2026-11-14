@@ -3,7 +3,7 @@ const std = @import("std");
 const libc = @import("libc");
 const transport = @import("transport.zig");
 const ownership = @import("store.zig");
-const validId = @import("../../../execution/worker.zig").validId;
+const isSessionId = @import("../../../execution/worker.zig").isSessionId;
 fn exchange(a: std.mem.Allocator, request: []const u8, submitted: *bool) !?[]const u8 {
     submitted.* = false;
     var key_buffer: [256]u8 = undefined;
@@ -25,7 +25,7 @@ fn exchangeAt(a: std.mem.Allocator, request: []const u8, submitted: *bool, key: 
         var stat: libc.struct_stat = undefined;
         if (libc.fstat(file, &stat) != 0) return systemFailure("stat session record");
         if (!ownership.regular(stat, libc.getuid())) return error.UnsafeSessionFile;
-        if (stat.st_size != 64 or !transport.readExact(file, &nonce) or !validId(&nonce)) return error.InvalidSessionReference;
+        if (stat.st_size != 64 or !transport.readExact(file, &nonce) or !isSessionId(&nonce)) return error.InvalidSessionReference;
     }
     const fd = libc.socket(libc.AF_UNIX, libc.SOCK_STREAM | libc.SOCK_CLOEXEC, 0);
     if (fd < 0) return systemFailure("create session socket");

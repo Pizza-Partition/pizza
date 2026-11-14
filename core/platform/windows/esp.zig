@@ -27,7 +27,7 @@ pub const Esp = struct {
     /// EVERY file before the offline compiler captures its FAT allocation proof.
     pub fn open(a: std.mem.Allocator, io: std.Io, disk: proto.wire.HostDisk, part: proto.wire.HostPartition, session: []const u8, create: bool) !Esp {
         if (!@import("ipc/security.zig").elevated()) return error.AdministratorRequired;
-        if (!@import("../../execution/worker.zig").validId(session)) return error.InvalidSession;
+        if (!@import("../../execution/worker.zig").isSessionId(session)) return error.InvalidSession;
         if (disk.read_only or !std.mem.eql(u8, disk.partition_table orelse "", "gpt") or
             !std.mem.eql(u8, part.type_guid orelse "", ESP_TYPE)) return error.EspRequired;
         const handle = try native.open(a, disk.path, native.GENERIC_READ);
@@ -286,7 +286,7 @@ fn findVolume(a: std.mem.Allocator, number: u32, offset: u64, length: u64) ![]co
 test "ESP names are fixed and boot path session components remain FAT short names" {
     const a = std.testing.allocator;
     const id = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
-    try std.testing.expect(@import("../../execution/worker.zig").validId(id));
+    try std.testing.expect(@import("../../execution/worker.zig").isSessionId(id));
     for (0..8) |i| {
         const component = try std.ascii.allocUpperString(a, id[i * 8 ..][0..8]);
         defer a.free(component);

@@ -35,7 +35,7 @@ pub fn wait(self: *Worker, io: std.Io) void {
 }
 
 fn matches(self: *const Worker, id: []const u8) bool {
-    return validId(id) and self.active_present and std.mem.eql(u8, &self.active_id, id);
+    return isSessionId(id) and self.active_present and std.mem.eql(u8, &self.active_id, id);
 }
 
 pub fn executionActive(self: *Worker, id: []const u8) bool {
@@ -83,7 +83,7 @@ fn executeTask(work: Work) void {
 }
 
 pub fn startExecution(self: *Worker, io: std.Io, id: []const u8, task: []const u8, context: ?*anyopaque, run: Callback) !void {
-    if (!validId(id) or task.len > 8 * 1024 * 1024 or !self.busy()) return error.InvalidExecution;
+    if (!isSessionId(id) or task.len > 8 * 1024 * 1024 or !self.busy()) return error.InvalidExecution;
     const work: Work = .{ .worker = self, .task = try ALLOCATOR.dupe(u8, task), .context = context, .run = run };
     errdefer ALLOCATOR.free(work.task);
     self.lock();
@@ -97,8 +97,6 @@ pub fn startExecution(self: *Worker, io: std.Io, id: []const u8, task: []const u
 }
 
 /// Session keys are bounded lowercase hex; they can also be used as file names.
-pub fn validId(id: []const u8) bool {
-    if (id.len != 64) return false;
-    for (id) |byte| if (!(byte >= '0' and byte <= '9' or byte >= 'a' and byte <= 'f')) return false;
-    return true;
+pub fn isSessionId(id: []const u8) bool {
+    return id.len == 64 and std.mem.indexOfNone(u8, id, "0123456789abcdef") == null;
 }

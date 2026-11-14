@@ -73,7 +73,8 @@ pub fn build(b: *std.Build) !void {
     configureCompile(domain, windows_lld);
     b.step("test-domain", "Run planning, execution and application tests without system or WebUI dependencies").dependOn(&b.addRunArtifact(domain).step);
 
-    const vm_tests = b.addTest(.{ .name = "vm-common-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.files.addCopyFile(b.path("test/vm/guest.zig"), "shared-guest-tests.zig"), .target = target, .optimize = optimize, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "vm_common", .module = b.createModule(.{ .root_source_file = b.path("test/vm/common.zig"), .target = target, .optimize = optimize }) } } }) });
+    const vm_common = b.createModule(.{ .root_source_file = b.path("test/vm/common.zig"), .target = target, .optimize = optimize });
+    const vm_tests = b.addTest(.{ .name = "vm-common-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.files.addCopyFile(b.path("test/vm/guest.zig"), "shared-guest-tests.zig"), .target = target, .optimize = optimize, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "vm_common", .module = vm_common } } }) });
     configureCompile(vm_tests, windows_lld);
     b.step("test-vm-common", "Check shared VM acceptance postconditions without a VM").dependOn(&b.addRunArtifact(vm_tests).step);
     if (linux) |bindings| {
@@ -86,7 +87,7 @@ pub fn build(b: *std.Build) !void {
         const guest_sources = b.addWriteFiles();
         _ = guest_sources.addCopyDirectory(b.path("core"), "core", .{});
         _ = guest_sources.addCopyFile(b.path("test/vm/guest.zig"), "shared_guest.zig");
-        const guest = b.addExecutable(.{ .name = "linux-vm-guest", .root_module = b.createModule(.{ .root_source_file = guest_sources.addCopyFile(b.path("test/linux-vm/guest.zig"), "guest.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "vm_common", .module = b.createModule(.{ .root_source_file = b.path("test/vm/common.zig"), .target = target, .optimize = optimize }) } } }) });
+        const guest = b.addExecutable(.{ .name = "linux-vm-guest", .root_module = b.createModule(.{ .root_source_file = guest_sources.addCopyFile(b.path("test/linux-vm/guest.zig"), "guest.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "vm_common", .module = vm_common } } }) });
         bindings.addTo(guest.root_module);
         configureCompile(guest, false);
         const stage = b.step("stage-linux-tests", "Stage Linux product and guest test binaries for QEMU");
@@ -100,19 +101,20 @@ pub fn build(b: *std.Build) !void {
     if (linux != null) b.top_level_steps.get("stage-linux-tests").?.step.dependOn(&b.addInstallArtifact(protocol_compile, .{ .dest_sub_path = "linux-tests/protocol-tests" }).step);
     try @import("test/linux-vm/build.zig").add(b);
 
-    b.step("test", "Run host planner and backend tests").dependOn(&test_run.step);
-    b.top_level_steps.get("test").?.step.dependOn(&protocol_tests.step);
-    b.step("test-host", "Run host planner and backend tests").dependOn(&test_run.step);
-    b.top_level_steps.get("test-host").?.step.dependOn(&protocol_tests.step);
-    b.step("check", "Compile the application and run host tests").dependOn(&test_run.step);
-    b.top_level_steps.get("check").?.step.dependOn(&protocol_tests.step);
-    b.top_level_steps.get("check").?.step.dependOn(&exe.step);
-    b.top_level_steps.get("check").?.step.dependOn(&protocol_bindings.step);
+    const test_step = b.step("test", "Run host planner and backend tests");
+    test_step.dependOn(&test_run.step);
+    test_step.dependOn(&protocol_tests.step);
+    const check = b.step("check", "Compile the application and run host tests");
+    check.dependOn(&test_run.step);
+    check.dependOn(&protocol_tests.step);
+    check.dependOn(&exe.step);
+    check.dependOn(&protocol_bindings.step);
     const fmt = b.addFmt(.{ .paths = &.{ b.path("build.zig"), b.path("build.zig.zon"), b.path("core"), b.path("build"), b.path("test") }, .check = true });
     b.step("fmt-check", "Check Zig source formatting").dependOn(&fmt.step);
-    b.step("compile", "Compile the application and host tests without running them").dependOn(&exe.step);
-    b.top_level_steps.get("compile").?.step.dependOn(&vm_tests.step);
-    b.top_level_steps.get("compile").?.step.dependOn(&tests.step);
+    const compile_step = b.step("compile", "Compile the application and host tests without running them");
+    compile_step.dependOn(&exe.step);
+    compile_step.dependOn(&vm_tests.step);
+    compile_step.dependOn(&tests.step);
     if (win32) |m| {
         const guest_sources = b.addWriteFiles();
         _ = guest_sources.addCopyDirectory(b.path("core"), "core", .{});
@@ -122,7 +124,7 @@ pub fn build(b: *std.Build) !void {
         _ = guest_sources.addCopyFile(b.path("test/windows-vm/agent_protocol.zig"), "agent_protocol.zig");
         _ = guest_sources.addCopyFile(b.path("test/windows-vm/servicing.zig"), "servicing.zig");
         _ = guest_sources.addCopyFile(b.path("test/windows-vm/cli.zig"), "cli.zig");
-        const guest = b.addExecutable(.{ .name = "windows-vm-guest", .root_module = b.createModule(.{ .root_source_file = guest_source, .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "win32", .module = m }, .{ .name = "vm_common", .module = b.createModule(.{ .root_source_file = b.path("test/vm/common.zig"), .target = target, .optimize = optimize }) } } }) });
+        const guest = b.addExecutable(.{ .name = "windows-vm-guest", .root_module = b.createModule(.{ .root_source_file = guest_source, .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "win32", .module = m }, .{ .name = "vm_common", .module = vm_common } } }) });
         configureCompile(guest, windows_lld);
         // LLD's CodeView/PDB metadata changes between clean builds. The frozen
         // baseline is bound to this executable's bytes, so omit debug metadata.
@@ -130,7 +132,7 @@ pub fn build(b: *std.Build) !void {
         guest.root_module.addImport("clap", clap);
         const images = b.addTest(.{ .name = "windows-image-tests", .root_module = b.createModule(.{ .root_source_file = test_sources.root("windows-image.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{ .{ .name = "proto", .module = proto }, .{ .name = "win32", .module = m } } }) });
         configureCompile(images, windows_lld);
-        b.top_level_steps.get("compile").?.step.dependOn(&images.step);
+        compile_step.dependOn(&images.step);
         b.step("test-windows-image", "Run elevated Windows acceptance on a private temporary VHDX only").dependOn(&b.addRunArtifact(images).step);
         const stage = b.step("stage-windows-tests", "Stage Windows test binaries for running in a VM without Zig");
         stage.dependOn(&b.addInstallArtifact(guest, .{}).step);

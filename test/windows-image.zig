@@ -299,7 +299,8 @@ fn apply(fixture: *const Fixture, a: std.mem.Allocator, backend: *Disk, before: 
     try fixture.assertOwned(a, before);
     const application = @import("../core/app/service.zig");
     const editor = @import("../core/planning/editor.zig");
-    var service: application.service(OwnedDisk, TestSessions) = .{ .io = std.testing.io, .disk = .{ .fixture = fixture, .backend = backend } };
+    var unavailable_context: u8 = 0;
+    var service: application.service(OwnedDisk, TestSessions) = .{ .io = std.testing.io, .disk = .{ .fixture = fixture, .backend = backend }, .maintenance = @import("../core/boot/ports.zig").Controller.unavailable(&unavailable_context) };
     defer {
         service.sessions.worker.wait(service.io);
         if (service.sessions.store.record) |record| std.heap.page_allocator.free(record);

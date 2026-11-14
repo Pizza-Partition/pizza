@@ -80,6 +80,7 @@ export async function startApp({ request, demo, storage, version }) {
   const painter = createPainter(document.querySelector('#app'));
   const toast = document.querySelector('.toast');
   const s = {
+    layoutExpanded: false,
     screen: 'loading',
     demo,
     session: null,
@@ -139,12 +140,15 @@ export async function startApp({ request, demo, storage, version }) {
   /** Run `task` with a busy marker; failures are explained in a toast. */
   async function busy(name, task) {
     if (s.busy) return;
+    return withBusy(name, task, (error) => note(explain(error)));
+  }
+  async function withBusy(name, task, onError) {
     s.busy = name;
     render();
     try {
       await task();
     } catch (error) {
-      note(explain(error));
+      onError(error);
     } finally {
       if (s.busy === name) s.busy = null;
       render();
@@ -212,9 +216,9 @@ export async function startApp({ request, demo, storage, version }) {
     client = null;
     show('loading');
     try {
-      s.session = await request('/api/session');
+      s.session = await request({ action: 'session' });
       s.formats = s.session.formats ?? [];
-      s.inventory = await request('/api/inventory');
+      s.inventory = await request({ action: 'inventory' });
       s.elevated = false;
       inventory_revision++;
       const pending = last_maintenance.get();
@@ -224,7 +228,7 @@ export async function startApp({ request, demo, storage, version }) {
       else {
         show('disks');
         try {
-          adoptDiscovery(await request('/api/discover'), false);
+          adoptDiscovery(await request({ action: 'discover' }), false);
         } catch (error) {
           // A fresh desktop launch may not have an authorized helper yet.
           if (error.code !== 'PrivilegedServiceUnavailable') {
@@ -242,7 +246,7 @@ export async function startApp({ request, demo, storage, version }) {
 
   async function refresh() {
     const revision = inventory_revision;
-    const snapshot = await request(s.elevated ? '/api/inventory/elevated' : '/api/inventory');
+    const snapshot = await request({ action: 'inventory', elevated: s.elevated });
     // A slower ordinary read must not replace a newer administrator snapshot.
     if (revision !== inventory_revision) return;
     s.inventory = snapshot;
@@ -261,7 +265,12 @@ export async function startApp({ request, demo, storage, version }) {
     const disk = s.inventory.disks.find((d) => d.path === path);
     if (!disk) throw Error('That disk is no longer connected. Refresh the disk list.');
     const opened = canPlan(disk)
-      ? new PlanClient((data) => request('/api/plan', data), s.inventory, disk, s.elevated)
+      ? new PlanClient(
+          (data) => request({ action: 'plan', ...data }),
+          s.inventory,
+          disk,
+          s.elevated,
+        )
       : null;
     const first = opened ? await opened.edit() : null;
     if (revision !== navigation_revision) return;
@@ -308,23 +317,24 @@ export async function startApp({ request, demo, storage, version }) {
   async function authorize() {
     const path = s.disk.path;
     s.accessError = null;
-    s.busy = 'authorize';
-    render();
-    try {
-      const snapshot = await request('/api/inventory/elevated', {});
-      if (!snapshot.disks.some((d) => d.path === path))
-        throw Error('The selected disk is no longer connected. Go back and refresh the disk list.');
-      s.inventory = snapshot;
-      s.elevated = true;
-      inventory_revision++;
-      // The answer must not pull the user back into an editor they left.
-      if (s.screen === 'plan' && s.disk.path === path) await openDisk(path);
-    } catch (error) {
-      s.accessError = explain(error);
-    } finally {
-      if (s.busy === 'authorize') s.busy = null;
-      render();
-    }
+    return withBusy(
+      'authorize',
+      async () => {
+        const snapshot = await request({ action: 'inventory', elevated: true });
+        if (!snapshot.disks.some((d) => d.path === path))
+          throw Error(
+            'The selected disk is no longer connected. Go back and refresh the disk list.',
+          );
+        s.inventory = snapshot;
+        s.elevated = true;
+        inventory_revision++;
+        // The answer must not pull the user back into an editor they left.
+        if (s.screen === 'plan' && s.disk.path === path) await openDisk(path);
+      },
+      (error) => {
+        s.accessError = explain(error);
+      },
+    );
   }
 
   async function execute() {
@@ -333,7 +343,8 @@ export async function startApp({ request, demo, storage, version }) {
     render();
     if (plan.offline_validation_required) {
       try {
-        const value = await request('/api/prepare', {
+        const value = await request({
+          action: 'prepare',
           draft: plan.draft,
           approved_digest: plan.digest,
         });
@@ -350,7 +361,11 @@ export async function startApp({ request, demo, storage, version }) {
     last_run.set({ id: null, digest: plan.digest });
     try {
       monitor.watch(
-        await request('/api/execute', { draft: plan.draft, approved_digest: plan.digest }),
+        await request({
+          action: 'execute',
+          draft: plan.draft,
+          approved_digest: plan.digest,
+        }),
       );
     } catch (error) {
       if (REFUSED.has(error.code)) {
@@ -421,7 +436,7 @@ export async function startApp({ request, demo, storage, version }) {
     'cancel-run': () => monitor.cancel(),
     'find-run': () =>
       busy('find-run', async () => {
-        const found = await request('/api/discover/elevated');
+        const found = await request({ action: 'discover', elevated: true });
         if (!adoptDiscovery(found)) note(EXPLANATIONS.SessionNotFound);
       }),
     'save-report': () => download(`pizza-report-${s.run.id}.json`, s.run),
@@ -439,7 +454,8 @@ export async function startApp({ request, demo, storage, version }) {
       busy('maintenance-reboot', async () => {
         const pending = last_maintenance.get();
         try {
-          const result = await request('/api/reboot', {
+          const result = await request({
+            action: 'reboot',
             session_id: pending.id,
             approved_digest: pending.digest,
           });
@@ -453,7 +469,8 @@ export async function startApp({ request, demo, storage, version }) {
     'maintenance-cancel': () =>
       busy('maintenance-cancel', async () => {
         const pending = last_maintenance.get();
-        await request('/api/cancel', {
+        await request({
+          action: 'cancel',
           session_id: pending.id,
           approved_digest: pending.digest,
           elevated: true,
@@ -465,7 +482,10 @@ export async function startApp({ request, demo, storage, version }) {
     'maintenance-import': () =>
       busy('import', async () => {
         const pending = last_maintenance.get();
-        s.receipt = await request('/api/complete', pending ? { session_id: pending.id } : {});
+        s.receipt = await request({
+          action: 'complete',
+          ...(pending ? { session_id: pending.id } : {}),
+        });
         last_maintenance.set(null);
         s.screen = 'receipt';
       }),

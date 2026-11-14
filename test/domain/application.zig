@@ -76,8 +76,9 @@ const Sessions = struct {
         return self.response orelse "{\"version\":" ++ CURRENT_VERSION ++ "}";
     }
 };
+var unavailable_context: u8 = 0;
 fn fixture() app.service(Disk, Sessions) {
-    return .{ .io = std.testing.io, .disk = .{} };
+    return .{ .io = std.testing.io, .disk = .{}, .maintenance = @import("../../core/boot/ports.zig").Controller.unavailable(&unavailable_context) };
 }
 
 const Maintenance = struct {
@@ -364,4 +365,37 @@ test "discovery reuses authorization and recovers protected preparation without 
     maintenance.active = false;
     const empty = try std.json.parseFromSliceLeaky(wire.SessionDiscovery, a, try service.dispatch(a, request, .privileged), .{});
     try std.testing.expect(empty.maintenance == null and empty.execution == null);
+}
+
+test "disabled maintenance advertises no capability and preserves routing errors" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var service = fixture();
+    service.sessions.privileged = true;
+    const metadata = try std.json.parseFromSliceLeaky(std.json.Value, a, try service.metadata(a), .{});
+    try std.testing.expect(!metadata.object.get("maintenance_available").?.bool);
+    inline for (.{ .prepare, .reboot }) |action| {
+        const request: wire.PrivilegedRequest = .{ .version = proto.API_VERSION, .action = action };
+        try std.testing.expectError(error.MaintenancePreparationUnavailable, service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{}), .privileged));
+    }
+    try std.testing.expectError(error.NoCompletionReceipt, service.dispatch(a, try std.json.Stringify.valueAlloc(a, wire.PrivilegedRequest{ .version = proto.API_VERSION, .action = .complete }, .{}), .privileged));
+    try std.testing.expect(!service.sessions.worker.busy());
+}
+
+test "maintenance references use stored session approval checks" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var service = fixture();
+    service.sessions.privileged = true;
+    var maintenance: Maintenance = .{ .active = true, .finished = true };
+    service.maintenance = maintenance.port();
+    const requests = [_]wire.PrivilegedRequest{
+        .{ .version = proto.API_VERSION, .action = .reboot, .session_id = "malformed", .approved_digest = DISK_ID },
+        .{ .version = proto.API_VERSION, .action = .reboot, .session_id = SESSION_ID, .approved_digest = "malformed" },
+        .{ .version = proto.API_VERSION, .action = .complete, .session_id = "malformed" },
+    };
+    for (requests) |request| try std.testing.expectError(error.SessionApprovalMismatch, service.dispatch(a, try std.json.Stringify.valueAlloc(a, request, .{}), .privileged));
+    try std.testing.expect(maintenance.active and !maintenance.armed and !service.sessions.worker.busy());
 }

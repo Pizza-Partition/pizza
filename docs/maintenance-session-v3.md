@@ -78,14 +78,14 @@ verified → accepted → cleaning → committing_cleanup → completed
 ## 已运行的验收
 
 ```sh
-zig build check test-host host-helper host-windows session-image
+zig build check test host-helper host-windows session-image
 zig build test-storage-unit
 zig build test-maint-session-image
 ```
 
 在本地缓存只读的环境可设置 `ZIG_GLOBAL_CACHE_DIR=/tmp/pizza-zig-global`，不改变产品行为。
 
-`test-host` 覆盖三阶段编译、512 字节尾部对齐、精确 GPT 最终布局、恢复文件证据、固件租约及清单完整性。
+`test` 覆盖三阶段编译、512 字节尾部对齐、精确 GPT 最终布局、恢复文件证据、固件租约及清单完整性。
 原生 FAT32 场景在实际盘尾放置文件分配块，缩容后覆盖旧地址，再分别验证 Undo 和接受后 Cleanup；
 两条路径均扫描文件系统并检查文件内容和最终分区范围。
 
@@ -96,7 +96,7 @@ zig build test-maint-session-image
 初始化、执行、重开、撤销／接受、清理，并比较 GPT 原始记录。它拒绝设备和符号链接。
 该验收夹具的 ESP 是占位范围，原生 FAT32 分配证明由独立测试覆盖；夹具 JSON 清单不属于生产认证入口。
 
-本轮确认通过：`check`、13 项 `test-host`、48 项 `test-storage-unit`、跨进程镜像验收，
+本轮确认通过：`check`、13 项 `test`、48 项 `test-storage-unit`、跨进程镜像验收，
 以及 Linux helper、Windows 查询工具和镜像验收工具的编译。
 `test-storage-crash -- --seed 20261027` 的 120 轮全套运行在 180 秒限制内未完成（退出码 124），不算通过。
 全量 `test-filesystems` 尚未返回结果，`test-transition` 本轮未重跑。

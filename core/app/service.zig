@@ -1,4 +1,5 @@
 //! Application requests and authorization routing; no WebUI or operating-system APIs.
+const json = @import("../json.zig").json;
 const std = @import("std");
 const proto = @import("proto");
 const wire = proto.wire;
@@ -14,7 +15,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
         io: std.Io,
         disk: Disk,
         sessions: Sessions = .{},
-        maintenance: ?@import("../boot/ports.zig").Controller = null,
+        maintenance: @import("../boot/ports.zig").Controller,
 
         /// UI and CLI share this read-only editor endpoint. Elevated discovery
         /// uses the existing privileged inventory channel, never client data.
@@ -24,7 +25,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             const request = try std.json.parseFromSliceLeaky(editor.Request, a, bytes, .{});
             if (request.version != proto.API_VERSION) return error.UnsupportedProtocolVersion;
             const snapshot = if (request.elevated and !self.sessions.isPrivileged()) blk: {
-                const message = try std.json.Stringify.valueAlloc(a, wire.PrivilegedRequest{ .version = proto.API_VERSION, .action = .inventory, .elevated = true }, .{ .emit_null_optional_fields = false });
+                const message = try json(a, wire.PrivilegedRequest{ .version = proto.API_VERSION, .action = .inventory, .elevated = true });
                 const response = try self.dispatch(a, message, .local);
                 const envelope = try std.json.parseFromSliceLeaky(std.json.Value, a, response, .{});
                 if (envelope == .object and envelope.object.get("error") != null) return response;
@@ -32,7 +33,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             } else try self.disk.query(a);
             var result = try editor.edit(a, self.io, snapshot, request);
             if (request.review) result.validated = try @import("../planning/planner.zig").validate(a, snapshot, result.draft, &self.disk);
-            return std.json.Stringify.valueAlloc(a, result, .{ .emit_null_optional_fields = false });
+            return json(a, result);
         }
 
         pub fn metadata(self: *Self, a: std.mem.Allocator) ![]const u8 {
@@ -46,7 +47,7 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             for (std.meta.tags(wire.FilesystemKind)) |fs| {
                 if (try self.disk.canFs(a, fs, .format, false, false)) try formats.append(a, @tagName(fs));
             }
-            return std.json.Stringify.valueAlloc(a, .{ .version = proto.API_VERSION, .protocol = proto.API_VERSION, .writes_enabled = readiness == .ready, .maintenance_available = self.maintenance != null, .execution_issue = issue, .formats = formats.items, .capabilities = .{ "inventory", "plan", "validate", "execute", "status", "cancel", "discover" } }, .{ .emit_null_optional_fields = false });
+            return json(a, .{ .version = proto.API_VERSION, .protocol = proto.API_VERSION, .writes_enabled = readiness == .ready, .maintenance_available = self.maintenance.available, .execution_issue = issue, .formats = formats.items, .capabilities = .{ "inventory", "plan", "validate", "execute", "status", "cancel", "discover" } });
         }
 
         pub fn dispatch(self: *Self, a: std.mem.Allocator, bytes: []const u8, access: Access) ![]const u8 {
@@ -54,8 +55,8 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             if (r.elevated and access == .local)
                 return try self.sessions.elevate(a, bytes) orelse error.PrivilegedServiceUnavailable;
             switch (r.action) {
-                .inventory => return std.json.Stringify.valueAlloc(a, try self.disk.query(a), .{ .emit_null_optional_fields = false }),
-                .validate => return std.json.Stringify.valueAlloc(a, try @import("../planning/planner.zig").validate(a, try self.disk.query(a), r.draft orelse return error.MissingDraft, &self.disk), .{ .emit_null_optional_fields = false }),
+                .inventory => return json(a, try self.disk.query(a)),
+                .validate => return json(a, try @import("../planning/planner.zig").validate(a, try self.disk.query(a), r.draft orelse return error.MissingDraft, &self.disk)),
                 else => {},
             }
             if (access == .local) {
@@ -67,15 +68,13 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
             }
             if (!self.sessions.isPrivileged()) return error.RootRequired;
             switch (r.action) {
-                .execute => return std.json.Stringify.valueAlloc(a, try coordinator.start(self, a, r), .{ .emit_null_optional_fields = false }),
+                .execute => return json(a, try coordinator.start(self, a, r)),
                 .discover => {
-                    const maintenance = if (self.maintenance) |m|
-                        (if (m.discover) |discover| try discover(m.context, a, self.io) else null)
-                    else
-                        null;
+                    const m = self.maintenance;
+                    const maintenance = try m.discover(m.context, a, self.io);
                     const id = (try self.sessions.worker.currentId(a)) orelse (try self.sessions.store.latest(a));
                     const execution = if (id) |value| try coordinator.status(self, a, value) else null;
-                    return std.json.Stringify.valueAlloc(a, wire.SessionDiscovery{ .version = proto.API_VERSION, .maintenance = maintenance, .execution = execution }, .{ .emit_null_optional_fields = false });
+                    return json(a, wire.SessionDiscovery{ .version = proto.API_VERSION, .maintenance = maintenance, .execution = execution });
                 },
                 .status => {
                     const latest = if (r.session_id == null)
@@ -84,55 +83,55 @@ pub fn service(comptime Disk: type, comptime Sessions: type) type {
                         null;
                     const result = try coordinator.status(self, a, r.session_id orelse latest.?);
                     if (r.approved_digest) |digest| if (!std.mem.eql(u8, digest, result.plan_digest)) return error.SessionApprovalMismatch;
-                    return std.json.Stringify.valueAlloc(a, result, .{ .emit_null_optional_fields = false });
+                    return json(a, result);
                 },
                 .cancel => {
                     const id = r.session_id orelse return error.MissingSession;
-                    if (self.maintenance) |m| if (m.cancel) |cancel| {
+                    const m = self.maintenance;
+                    if (m.available) {
                         if (self.sessions.worker.writeLock()) {
                             defer self.sessions.worker.writeUnlock();
-                            if (try cancel(m.context, a, self.io, id, r.approved_digest)) |result| return std.json.Stringify.valueAlloc(a, result, .{ .emit_null_optional_fields = false });
+                            if (try m.cancel(m.context, a, self.io, id, r.approved_digest)) |result| return json(a, result);
                         }
-                    };
+                    }
                     // Only the worker writes durable progress while an execution is active.
                     _ = self.sessions.worker.cancelExecution(id);
-                    return std.json.Stringify.valueAlloc(a, try coordinator.status(self, a, id), .{ .emit_null_optional_fields = false });
+                    return json(a, try coordinator.status(self, a, id));
                 },
                 .prepare => {
-                    const m = self.maintenance orelse return error.MaintenancePreparationUnavailable;
+                    const m = self.maintenance;
+                    if (!m.available) return error.MaintenancePreparationUnavailable;
                     if (!self.sessions.worker.writeLock()) return error.ExecutionInProgress;
                     defer self.sessions.worker.writeUnlock();
-                    const draft = r.draft orelse return error.MissingDraft;
-                    const snapshot = try self.disk.query(a);
-                    const validated = try @import("../planning/planner.zig").validate(a, snapshot, draft, &self.disk);
-                    if (!std.mem.eql(u8, validated.digest, r.approved_digest orelse return error.MissingApproval)) return error.PlanApprovalChanged;
+                    const approval = try @import("approval.zig").check(self, a, r);
+                    const snapshot = approval.snapshot;
+                    const validated = approval.validated;
                     for (validated.diagnostics) |diagnostic| if (diagnostic.severity == .@"error") return error.PlanNotExecutable;
                     if (!validated.offline_validation_required) return error.NoMaintenanceRequired;
-                    return std.json.Stringify.valueAlloc(a, try m.prepare(m.context, a, self.io, snapshot, validated), .{ .emit_null_optional_fields = false });
+                    return json(a, try m.prepare(m.context, a, self.io, snapshot, validated));
                 },
                 .reboot => {
-                    const m = self.maintenance orelse return error.MaintenancePreparationUnavailable;
+                    const m = self.maintenance;
+                    if (!m.available) return error.MaintenancePreparationUnavailable;
                     if (!self.sessions.worker.writeLock()) return error.ExecutionInProgress;
                     defer self.sessions.worker.writeUnlock();
                     const id = r.session_id orelse return error.MissingSession;
                     const approved = r.approved_digest orelse return error.MissingApproval;
-                    _ = try proto.hexDigest(id);
-                    _ = try proto.hexDigest(approved);
-                    return std.json.Stringify.valueAlloc(a, try m.reboot(m.context, a, self.io, id, approved), .{ .emit_null_optional_fields = false });
+                    return json(a, try m.reboot(m.context, a, self.io, id, approved));
                 },
                 .complete => {
-                    const m = self.maintenance orelse return error.NoCompletionReceipt;
+                    const m = self.maintenance;
+                    if (!m.available) return error.NoCompletionReceipt;
                     if (!self.sessions.worker.writeLock()) return error.ExecutionInProgress;
                     defer self.sessions.worker.writeUnlock();
-                    if (r.session_id) |id| _ = try proto.hexDigest(id);
-                    return std.json.Stringify.valueAlloc(a, try m.complete(m.context, a, self.io, r.session_id), .{ .emit_null_optional_fields = false });
+                    return json(a, try m.complete(m.context, a, self.io, r.session_id));
                 },
                 else => unreachable,
             }
         }
         pub fn replyError(self: *Self, a: std.mem.Allocator, err: anyerror) []const u8 {
             const message = if (err == error.HostPreflightFailed) self.disk.failureMessage(err) else @errorName(err);
-            return std.json.Stringify.valueAlloc(a, .{ .@"error" = @errorName(err), .message = message }, .{ .emit_null_optional_fields = false }) catch "{\"error\":\"OutOfMemory\",\"message\":\"Cannot encode error response\"}";
+            return json(a, .{ .@"error" = @errorName(err), .message = message }) catch "{\"error\":\"OutOfMemory\",\"message\":\"Cannot encode error response\"}";
         }
         pub fn respond(self: *Self, a: std.mem.Allocator, bytes: []const u8, access: Access) []const u8 {
             return self.dispatch(a, bytes, access) catch |err| self.replyError(a, err);

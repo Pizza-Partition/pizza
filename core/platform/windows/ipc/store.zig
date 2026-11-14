@@ -3,7 +3,7 @@ const Store = @This();
 const std = @import("std");
 const native = @import("../native.zig");
 const security = @import("security.zig");
-const validId = @import("../../../execution/worker.zig").validId;
+const isSessionId = @import("../../../execution/worker.zig").isSessionId;
 const MAX_RECORD = 4 * 1024 * 1024;
 path: ?[]const u8 = null,
 namespace: enum { sessions, maintenance } = .sessions,
@@ -46,7 +46,7 @@ pub fn deinit(self: *Store) void {
     self.path = null;
 }
 fn filename(self: *Store, a: std.mem.Allocator, id: []const u8) ![:0]const u16 {
-    if (!validId(id)) return error.InvalidSession;
+    if (!isSessionId(id)) return error.InvalidSession;
     return native.wide(a, try a.print("{s}\\{s}.json", .{ self.path orelse return error.SessionUnavailable, id }));
 }
 pub fn persist(self: *Store, id: []const u8, bytes: []const u8) !void {
@@ -123,7 +123,7 @@ pub fn latest(self: *Store, a: std.mem.Allocator) !?[]const u8 {
             var candidate: [64]u8 = undefined;
             for (&candidate, name[0..64]) |*byte, ch| byte.* = std.math.cast(u8, ch) orelse 0;
             const time = @as(u64, entry.ftLastWriteTime.dwHighDateTime) << 32 | entry.ftLastWriteTime.dwLowDateTime;
-            if (validId(&candidate) and (id == null or time > newest or (time == newest and std.mem.order(u8, &candidate, &id.?) == .gt))) {
+            if (isSessionId(&candidate) and (id == null or time > newest or (time == newest and std.mem.order(u8, &candidate, &id.?) == .gt))) {
                 const bytes = try self.read(a, &candidate);
                 if (bytes) |data| {
                     a.free(data);

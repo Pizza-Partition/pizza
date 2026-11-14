@@ -205,12 +205,17 @@ function describeIntent(intent, nameOf) {
   }
 }
 
+function partitionName(s, id) {
+  return displayName(
+    s.baseline.find((p) => p.id === id) ??
+      s.parts.find((p) => p.id === id) ?? { name: 'partition' },
+  );
+}
+function recipeFor(p, ids) {
+  return p.free ? 7 : Math.max(0, ids.indexOf(p.id)) % 7;
+}
 function changeList(s, intents) {
-  const nameOf = (id) =>
-    displayName(
-      s.baseline.find((p) => p.id === id) ??
-        s.parts.find((p) => p.id === id) ?? { name: 'partition' },
-    );
+  const nameOf = (id) => partitionName(s, id);
   return intents
     .map((intent) => {
       const [title, detail] = describeIntent(intent, nameOf);
@@ -238,7 +243,7 @@ function proportions(s) {
         name: displayName(p),
         size: Number(p.length) / 1073741824,
         displaySize: formatBytes(p.length),
-        recipe: p.free ? 7 : Math.max(0, ids.indexOf(p.id)) % 7,
+        recipe: recipeFor(p, ids),
       })),
       selected: s.selected,
       editable: true,
@@ -254,7 +259,7 @@ function pizzaLegend(s) {
   const total = s.parts.reduce((sum, p) => sum + p.length, 0n);
   return `<div class="pizza-legend" aria-label="Partition slices">${s.parts
     .map((p) => {
-      const recipe = p.free ? 7 : Math.max(0, ids.indexOf(p.id)) % 7;
+      const recipe = recipeFor(p, ids);
       const share = total ? Number((p.length * 1000n) / total) / 10 : 0;
       return `<button type="button" data-action="select" data-select="${esc(p.id)}" aria-pressed="${p.id === s.selected}" title="${esc(displayName(p))} · ${esc(p.filesystem ?? (p.free ? 'Unallocated' : 'Unknown'))}${p.protected ? ' · Protected' : ''}" style="--recipe:${RECIPE_COLORS[recipe]}"><span class="recipe-dot" aria-hidden="true"></span><span class="slice-name">${esc(displayName(p))}<small>${esc(p.filesystem ?? (p.free ? 'Unallocated' : 'Unknown'))}${p.protected ? ' · Protected' : ''}</small></span><span class="slice-size">${formatBytes(p.length)}<small>${share < 0.1 ? '&lt;0.1' : share}%</small></span></button>`;
     })
@@ -324,10 +329,7 @@ export function review(s) {
   const has_error = diagnostics.some((d) => d.severity === 'error');
   const offline_run =
     v.offline_validation_required && s.session.maintenance_available && !has_error;
-  const nameOf = (id) =>
-    displayName(
-      s.baseline.find((p) => p.id === id) ?? s.parts.find((p) => p.id === id) ?? { name: id },
-    );
+  const nameOf = (id) => partitionName(s, id);
 
   const blocker = !operations.length
     ? 'There is nothing to apply.'

@@ -5,7 +5,7 @@
 | 入口                      | 范围                                                                 | 命令                                              |
 | ------------------------- | -------------------------------------------------------------------- | ------------------------------------------------- |
 | `domain.zig`、`domain/`   | 规划、审批、执行与后台任务的业务测试及替身                           | `zig build test-domain -Dheadless=true`           |
-| `host.zig`、`windows.zig` | 当前平台、授权通信、持久记录与协议包证据                             | `zig build test-host -Dheadless=true`             |
+| `host.zig`、`windows.zig` | 当前平台、授权通信、持久记录与协议包证据                             | `zig build test -Dheadless=true`                  |
 | `linux-image.zig`         | 仅写入测试创建的普通文件镜像                                         | `zig build test-host-image -Dheadless=true`       |
 | `windows-image.zig`       | Windows 管理员进程中真实 VHDX 测试                                   | `zig build test-windows-image -Dwindows-lld=true` |
 | `windows-vm/`             | Linux/QEMU Windows 完整维护重启及断电流程                            | 见 [windows-vm/README.md](windows-vm/README.md)   |
@@ -19,7 +19,7 @@ Windows 交叉编译不会执行生成的 `.exe`，真实运行应在隔离 VM �
 使测试能够导入产品源码，不必将测试入口放回 `core/`，也不添加测试专用的公开产品 API。
 源文件旁的内联 `test` 声明仍随其模块一起纳入相应套件。
 
-Linux 维护控制器随 `test-host` 检查持久状态、ESP 路径规则、交接请求与固件租约；
+Linux 维护控制器随 `test` 检查持久状态、ESP 路径规则、交接请求与固件租约；
 镜像和协议来自同一锁定维护发布。平台实现与整机验收边界见
 [Linux 维护控制器](../docs/linux-maintenance.md)。
 `zig build stage-linux-tests` 导出 Linux 产品与四个原生套件，完整重启验收使用独立文件镜像。

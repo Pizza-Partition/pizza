@@ -1,4 +1,5 @@
 //! Queue approved plans, validate again before writing, and reconcile durable progress.
+const json = @import("../json.zig").json;
 const std = @import("std");
 const proto = @import("proto");
 const wire = proto.wire;
@@ -31,23 +32,24 @@ pub fn start(app: anytype, a: std.mem.Allocator, r: wire.PrivilegedRequest) !wir
     defer if (!handed_off) app.sessions.worker.writeUnlock();
     // Check under the same lock as prepare: otherwise a competing preparation
     // could install a durable boot handoff between this check and execution.
-    if (app.maintenance) |m| if (try m.pending(m.context)) return error.MaintenanceSessionInProgress;
+    const maintenance = app.maintenance;
+    if (try maintenance.pending(maintenance.context)) return error.MaintenanceSessionInProgress;
     const draft = r.draft orelse return error.MissingDraft;
-    const snapshot = try app.disk.query(a);
-    const validated = try @import("../planning/planner.zig").validate(a, snapshot, draft, &app.disk);
-    if (!std.mem.eql(u8, validated.digest, r.approved_digest orelse return error.MissingApproval)) return error.PlanApprovalChanged;
+    const approval = try @import("approval.zig").check(app, a, r);
+    const snapshot = approval.snapshot;
+    const validated = approval.validated;
     if (!validated.executable) return error.PlanNotExecutable;
     try preflight(app, a, snapshot, draft, validated);
     var random: [32]u8 = undefined;
     app.io.random(&random);
     var run: wire.ExecutionSession = .{ .version = proto.API_VERSION, .id = try a.dupe(u8, &std.fmt.bytesToHex(random, .lower)), .plan_digest = validated.digest, .status = .prepared, .completed = 0, .total = @intCast(validated.host_operations.len), .message = "Approved host execution queued. Completed host steps have no unified Undo." };
-    try app.sessions.store.persist(run.id, try std.json.Stringify.valueAlloc(a, run, .{ .emit_null_optional_fields = false }));
-    const task = try std.json.Stringify.valueAlloc(a, Task{ .session = run, .request = r }, .{ .emit_null_optional_fields = false });
+    try app.sessions.store.persist(run.id, try json(a, run));
+    const task = try json(a, Task{ .session = run, .request = r });
     app.sessions.worker.startExecution(app.io, run.id, task, app, taskRunner(@TypeOf(app.*)).run) catch |err| {
         std.log.err("Execution worker could not start: {t}", .{err});
         run.status = .failed;
         run.message = "Execution worker could not start; no disk operation was started.";
-        try app.sessions.store.persist(run.id, try std.json.Stringify.valueAlloc(a, run, .{ .emit_null_optional_fields = false }));
+        try app.sessions.store.persist(run.id, try json(a, run));
         return run;
     };
     handed_off = true;
@@ -63,7 +65,7 @@ fn createBackendType(comptime App: type) type {
             return self.app.disk.query(self.a);
         }
         pub fn persist(self: *@This(), s: wire.ExecutionSession) !void {
-            return self.app.sessions.store.persist(s.id, try std.json.Stringify.valueAlloc(self.a, s, .{ .emit_null_optional_fields = false }));
+            return self.app.sessions.store.persist(s.id, try json(self.a, s));
         }
         pub fn cancelled(self: *@This()) bool {
             return self.app.sessions.worker.executionCancelled(self.id);

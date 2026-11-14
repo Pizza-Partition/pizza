@@ -315,21 +315,20 @@ export function createDemoBackend(version) {
   }
 
   const delay = (value) => new Promise((resolve) => setTimeout(() => resolve(value), 120));
-  return async function request(path, data = {}) {
-    switch (path) {
-      case '/api/session':
+  return async function request({ action, ...data }) {
+    switch (action) {
+      case 'session':
         return delay({
           version,
           writes_enabled: true,
           maintenance_available: false,
           formats: ['ext4', 'btrfs', 'xfs', 'ntfs', 'exfat', 'vfat'],
         });
-      case '/api/inventory':
-      case '/api/inventory/elevated':
+      case 'inventory':
         return delay(snapshot());
-      case '/api/plan':
+      case 'plan':
         return plan(data);
-      case '/api/execute':
+      case 'execute':
         run = {
           draft: data.draft,
           session: {
@@ -344,12 +343,11 @@ export function createDemoBackend(version) {
           },
         };
         return delay(structuredClone(run.session));
-      case '/api/discover':
-      case '/api/discover/elevated':
+      case 'discover':
         return delay({ version, execution: run ? status() : null });
-      case '/api/status':
+      case 'status':
         return delay(status());
-      case '/api/cancel':
+      case 'cancel':
         if (run) run.session.cancel_requested = true;
         return delay(status());
       default:
