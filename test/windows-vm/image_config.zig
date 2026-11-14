@@ -9,6 +9,8 @@ pub const Image = struct {
     filename: []const u8,
     size: u64,
     sha256: []const u8,
+    chunk_size: u64 = 0,
+    chunk_sha256: []const []const u8 = &.{},
     required_capabilities: []const []const u8,
 };
 pub const Config = struct {
@@ -31,6 +33,10 @@ pub const Config = struct {
             if (!safeName(image.id) or !safeName(image.filename) or image.size == 0) return error.InvalidImageIdentity;
             if (!https(image.url) or !https(image.source_page)) return error.HttpsImageSourceRequired;
             try validateHash(image.sha256, 64);
+            if (image.chunk_sha256.len > 0) {
+                if (image.chunk_size == 0 or image.chunk_size > 64 * 1024 * 1024 or image.chunk_sha256.len > 4096 or try std.math.divCeil(u64, image.size, image.chunk_size) != image.chunk_sha256.len) return error.InvalidImageChunks;
+                for (image.chunk_sha256) |checksum| try validateHash(checksum, 64);
+            } else if (image.chunk_size != 0) return error.InvalidImageChunks;
             for (config.images[0..i]) |earlier| {
                 if (std.mem.eql(u8, image.id, earlier.id)) return error.DuplicateImageId;
                 if (std.mem.eql(u8, image.filename, earlier.filename)) return error.DuplicateImageFilename;
@@ -77,4 +83,24 @@ test "configuration rejects unpinned images and cache path escapes" {
     const needle = (try Config.parse(arena.allocator(), bytes)).images[0].sha256;
     const corrupted = try std.mem.replaceOwned(u8, arena.allocator(), bytes, needle, "no-hash");
     try std.testing.expectError(error.InvalidImageHash, Config.parse(arena.allocator(), corrupted));
+}
+
+test "chunk integrity metadata must cover exactly the locked image" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var config = try Config.parse(a, @embedFile("images.json"));
+    var images = [_]Image{config.images[0]};
+    config.images = &images;
+    const original = images[0];
+    images[0].chunk_size = 0;
+    try std.testing.expectError(error.InvalidImageChunks, Config.parse(a, try std.json.Stringify.valueAlloc(a, config, .{})));
+    images[0] = original;
+    images[0].chunk_sha256 = original.chunk_sha256[0 .. original.chunk_sha256.len - 1];
+    try std.testing.expectError(error.InvalidImageChunks, Config.parse(a, try std.json.Stringify.valueAlloc(a, config, .{})));
+    images[0].chunk_sha256 = &.{};
+    try std.testing.expectError(error.InvalidImageChunks, Config.parse(a, try std.json.Stringify.valueAlloc(a, config, .{})));
+    images[0].size = 1;
+    images[0].chunk_sha256 = &.{"invalid"};
+    try std.testing.expectError(error.InvalidImageHash, Config.parse(a, try std.json.Stringify.valueAlloc(a, config, .{})));
 }

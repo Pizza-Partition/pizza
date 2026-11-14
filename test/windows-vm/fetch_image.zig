@@ -43,7 +43,10 @@ fn verify(io: std.Io, image: config_api.Image, path: []const u8) !void {
     if (st.size != image.size) return error.ImageSizeMismatch;
     const actual = try digest(io, path);
     if (actual.size != image.size) return error.ImageSizeMismatch;
-    if (!std.ascii.eqlIgnoreCase(&actual.sha256, image.sha256)) return error.ImageChecksumMismatch;
+    if (!std.ascii.eqlIgnoreCase(&actual.sha256, image.sha256)) {
+        std.debug.print("Image SHA-256: expected {s}, got {s}\n", .{ image.sha256, actual.sha256 });
+        return error.ImageChecksumMismatch;
+    }
 }
 fn exists(io: std.Io, path: []const u8) !bool {
     _ = std.Io.Dir.cwd().statFile(io, path, .{}) catch |err| switch (err) {
@@ -158,6 +161,7 @@ test "TLS interruption resumes verified ranges while HTTP refusal remains fatal"
             \\count = pathlib.Path(__file__).with_name('calls')
             \\attempt = int(count.read_text()) if count.exists() else 0
             \\count.write_text(str(attempt + 1))
+            \\size = int(os.environ['SIZE'])
             \\if os.environ.get('FATAL'): sys.exit(22)
             \\groups = [[]]
             \\for arg in sys.argv[1:]:
@@ -168,12 +172,14 @@ test "TLS interruption resumes verified ranges while HTTP refusal remains fatal"
             \\    first, last = map(int, args[args.index('--range') + 1].split('-'))
             \\    header = pathlib.Path(args[args.index('--dump-header') + 1])
             \\    output = pathlib.Path(args[args.index('--output') + 1])
-            \\    header.write_text(f'HTTP/2 206\r\nContent-Range: bytes {first}-{last}/8\r\n\r\n')
-            \\    data = b'abcdefgh'[first:last + 1]
-            \\    output.write_bytes(data[:2] if attempt == 0 and index == 0 else data)
+            \\    header.write_text(f'HTTP/2 206\r\nContent-Range: bytes {first}-{last}/{size}\r\n\r\n')
+            \\    data = bytes(i % 251 for i in range(first, last + 1))
+            \\    if os.environ.get('CORRUPT') and (attempt == 0 or os.environ['CORRUPT'] == 'always') and index == 0:
+            \\        data = bytes([data[0] ^ 1]) + data[1:]
+            \\    output.write_bytes(data[:2] if not os.environ.get('CORRUPT') and attempt == 0 and index == 0 else data)
             \\    ranges.append(f'{first}-{last}')
             \\with pathlib.Path(__file__).with_name('ranges').open('a') as log: log.write(','.join(ranges) + '\n')
-            \\sys.exit(0 if os.environ.get('MASKED_SUCCESS') else 56 if attempt == 0 else 0)
+            \\sys.exit(0 if (os.environ.get('MASKED_SUCCESS') or os.environ.get('CORRUPT')) else 56 if attempt == 0 else 0)
         );
         try curl.setPermissions(io, .executable_file);
     }
@@ -185,16 +191,21 @@ test "TLS interruption resumes verified ranges while HTTP refusal remains fatal"
     config.download.retries = 1;
     config.download.timeout_seconds = 10;
     var image = try config.select(null);
-    image.size = 8;
+    const expected = try a.alloc(u8, 1024 * 1024 + 7);
+    for (expected, 0..) |*byte, i| byte.* = @intCast(i % 251);
+    image.size = expected.len;
+    image.chunk_size = 0;
+    image.chunk_sha256 = &.{};
+    try env.put("SIZE", try a.print("{d}", .{expected.len}));
     image.url = "https://example.invalid/fixture.iso";
-    const sha256 = vm_common.hash("abcdefgh");
+    const sha256 = vm_common.hash(expected);
     image.sha256 = &sha256;
     const partial = try std.fs.path.join(a, &.{ root, "fixture.partial" });
     try parallelDownload(a, io, &env, transport, config, image, partial);
     try verify(io, image, partial);
-    try std.testing.expectEqualStrings("abcdefgh", try std.Io.Dir.cwd().readFileAlloc(io, partial, a, .limited(100)));
+    try std.testing.expectEqualSlices(u8, expected, try std.Io.Dir.cwd().readFileAlloc(io, partial, a, .limited(2 * 1024 * 1024)));
     try std.testing.expectEqualStrings("2", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
-    try std.testing.expectEqualStrings("0-3,4-7\n2-3\n", try temp.dir.readFileAlloc(io, "ranges", a, .limited(100)));
+    try std.testing.expectEqualStrings("0-524291,524292-1048582\n2-524291\n", try temp.dir.readFileAlloc(io, "ranges", a, .limited(100)));
     try temp.dir.writeFile(io, .{ .sub_path = "calls", .data = "0" });
     try env.put("MASKED_SUCCESS", "1");
     const masked = try std.fs.path.join(a, &.{ root, "masked.partial" });
@@ -202,6 +213,25 @@ test "TLS interruption resumes verified ranges while HTTP refusal remains fatal"
     try verify(io, image, masked);
     try std.testing.expectEqualStrings("2", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
     _ = env.swapRemove("MASKED_SUCCESS");
+    try temp.dir.writeFile(io, .{ .sub_path = "calls", .data = "0" });
+    try env.put("CORRUPT", "1");
+    image.chunk_size = (image.size + 1) / 2;
+    const first_sha = vm_common.hash(expected[0..@intCast(image.chunk_size)]);
+    const last_sha = vm_common.hash(expected[@intCast(image.chunk_size)..]);
+    image.chunk_sha256 = &.{ &first_sha, &last_sha };
+    const corrupt = try std.fs.path.join(a, &.{ root, "corrupt.partial" });
+    try parallelDownload(a, io, &env, transport, config, image, corrupt);
+    try verify(io, image, corrupt);
+    try std.testing.expectEqualStrings("2", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
+    try temp.dir.writeFile(io, .{ .sub_path = "calls", .data = "0" });
+    try env.put("CORRUPT", "always");
+    const unrecoverable = try std.fs.path.join(a, &.{ root, "unrecoverable.partial" });
+    try std.testing.expectError(error.ImageDownloadIncomplete, parallelDownload(a, io, &env, transport, config, image, unrecoverable));
+    try std.testing.expectEqualStrings("2", try temp.dir.readFileAlloc(io, "calls", a, .limited(100)));
+    try std.testing.expect(!try exists(io, unrecoverable));
+    _ = env.swapRemove("CORRUPT");
+    image.chunk_size = 0;
+    image.chunk_sha256 = &.{};
     try temp.dir.writeFile(io, .{ .sub_path = "calls", .data = "0" });
     try env.put("FATAL", "1");
     const refused = try std.fs.path.join(a, &.{ root, "refused.partial" });
@@ -220,6 +250,18 @@ test "TLS interruption resumes verified ranges while HTTP refusal remains fatal"
     }
     try std.testing.expectEqual(image.size, total);
 }
+// A complete HTTP range can still contain corrupt bytes. Keep good chunks and
+// retry only the affected extent; the whole-image digest remains authoritative.
+fn verifyOrResetChunk(io: std.Io, part: Segment, image: config_api.Image) !bool {
+    if (image.chunk_sha256.len == 0) return true;
+    const expected = image.chunk_sha256[@intCast(part.offset / image.chunk_size)];
+    const actual = try digest(io, part.path);
+    if (std.ascii.eqlIgnoreCase(expected, &actual.sha256)) return true;
+    std.debug.print("Corrupt image range {d}-{d}: expected {s}, got {s}; retrying this range\n", .{ part.offset, part.offset + part.length - 1, expected, actual.sha256 });
+    const file = try std.Io.Dir.cwd().createFile(io, part.path, .{});
+    file.close(io);
+    return false;
+}
 fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.Environ.Map, transport: []const u8, config: config_api.Config, image: config_api.Image, partial: []const u8) !void {
     const manifest = try a.print("{s}.segments.json", .{partial});
     const plan = if (try exists(io, manifest)) blk: {
@@ -227,13 +269,13 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
         if (!std.mem.eql(u8, try std.json.Stringify.valueAlloc(a, prior.image, .{ .whitespace = .indent_2 }), try std.json.Stringify.valueAlloc(a, image, .{ .whitespace = .indent_2 }))) return error.PartialImageSourceMismatch;
         break :blk prior;
     } else blk: {
-        const prefix = if (try exists(io, partial)) (try std.Io.Dir.cwd().statFile(io, partial, .{})).size else 0;
+        const prefix = if (image.chunk_sha256.len > 0) 0 else if (try exists(io, partial)) (try std.Io.Dir.cwd().statFile(io, partial, .{})).size else 0;
         if (prefix == image.size) return;
         if (prefix > image.size) return error.PartialImageSourceMismatch;
         const remaining = image.size - prefix;
         // Bound each request's lifetime; the mirror repeatedly truncated the
         // former ~490 MB ranges in hosted CI. Concurrency remains independent.
-        const chunk = @min(64 * 1024 * 1024, try std.math.divCeil(u64, remaining, config.download.connections));
+        const chunk = if (image.chunk_sha256.len > 0) image.chunk_size else @min(64 * 1024 * 1024, try std.math.divCeil(u64, remaining, config.download.connections));
         const count = try std.math.divCeil(u64, remaining, chunk);
         if (count > 4096) return error.InvalidSegmentManifest;
         const parts = try a.alloc(Segment, @intCast(count));
@@ -251,6 +293,7 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
     var cursor = plan.prefix;
     for (plan.parts, 0..) |part, index| {
         if (!std.mem.eql(u8, part.path, try a.print("{s}.part-{d}", .{ partial, index })) or part.offset != cursor or part.length > image.size - cursor) return error.InvalidSegmentManifest;
+        if (image.chunk_sha256.len > 0 and (part.offset % image.chunk_size != 0 or part.length != @min(image.chunk_size, image.size - part.offset))) return error.InvalidSegmentManifest;
         cursor += part.length;
     }
     if (cursor != image.size) return error.InvalidSegmentManifest;
@@ -262,9 +305,12 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
         for (plan.parts) |part| {
             if (part.length == 0) continue;
             try mergeTail(a, io, part, image.size);
-            const have = if (try exists(io, part.path)) (try std.Io.Dir.cwd().statFile(io, part.path, .{})).size else 0;
+            var have = if (try exists(io, part.path)) (try std.Io.Dir.cwd().statFile(io, part.path, .{})).size else 0;
             if (have > part.length) return error.ImageSizeMismatch;
-            if (have == part.length) continue;
+            if (have == part.length) {
+                if (try verifyOrResetChunk(io, part, image)) continue;
+                have = 0;
+            }
             if (transfers > 0) try argv.append(a, "--next");
             const tail = try a.print("{s}.next", .{part.path});
             try argv.appendSlice(a, &.{ "--fail", "--location", "--silent", "--show-error", "--proto", "=https", "--proto-redir", "=https", "--retry", try a.print("{d}", .{config.download.retries}), "--connect-timeout", try a.print("{d}", .{config.download.connect_timeout_seconds}), "--max-time", try a.print("{d}", .{config.download.timeout_seconds}), "--max-filesize", try a.print("{d}", .{part.length - have}), "--range", try a.print("{d}-{d}", .{ part.offset + have, part.offset + part.length - 1 }), "--dump-header", try a.print("{s}.headers", .{tail}), "--output", tail, "--url", image.url });
@@ -278,7 +324,7 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
                 if (part.length == 0) continue;
                 try mergeTail(a, io, part, image.size);
                 const have = if (try exists(io, part.path)) (try std.Io.Dir.cwd().statFile(io, part.path, .{})).size else 0;
-                if (have != part.length) complete = false;
+                if (have != part.length or !try verifyOrResetChunk(io, part, image)) complete = false;
             }
             // With multiple URLs curl can return success for the last transfer
             // even when an earlier range failed. Inspect every segment as well.
@@ -288,7 +334,7 @@ fn parallelDownload(a: std.mem.Allocator, io: std.Io, env: ?*const std.process.E
             std.debug.print("Incomplete image transfer ({f}); verified ranges retained, attempt {d}/{d}\n{s}\n", .{ result.term, attempt + 1, config.download.retries + 1, result.stderr });
             if (attempt >= config.download.retries) {
                 _ = try vm_common.check(result);
-                return error.ImageSizeMismatch;
+                return error.ImageDownloadIncomplete;
             }
             try std.Io.sleep(io, .fromSeconds(2), .awake);
         }
